@@ -179,8 +179,10 @@ function initGame() {
 }
 
 function resetCueMarble() {
-    // Đặt bi cái nằm gần cạnh dưới, căn giữa theo x
-    cueMarble = new Marble(CANVAS_WIDTH / 2, CANVAS_HEIGHT - MARBLE_RADIUS * 6, '#fff', true);
+    // Đặt bi cái ngay phía dưới vòng arena,
+    // cách mép vòng một khoảng cố định tỷ lệ với marble radius
+    const cubeStartY = ARENA_Y + ARENA_RADIUS + MARBLE_RADIUS * 4;
+    cueMarble = new Marble(ARENA_X, cubeStartY, '#fff', true);
     marbles.push(cueMarble);
 }
 
@@ -273,8 +275,8 @@ function handleResize() {
     }
     // Bi cái: giữ khoảng cách tương đối tới arena
     if (cueMarble) {
-        cueMarble.pos.x = CANVAS_WIDTH / 2;
-        cueMarble.pos.y = CANVAS_HEIGHT - MARBLE_RADIUS * 6;
+        cueMarble.pos.x = ARENA_X;
+        cueMarble.pos.y = ARENA_Y + ARENA_RADIUS + MARBLE_RADIUS * 4;
     }
 }
 
