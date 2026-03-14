@@ -19,41 +19,36 @@ const leaderboardModalStandalone = document.getElementById('leaderboard-modal-st
 const closeLeaderboardBtn = document.getElementById('close-leaderboard-btn');
 const standaloneLeaderboardList = document.getElementById('standalone-leaderboard-list');
 
-// Constants — game logic always operates in 800×600 space
-const CANVAS_WIDTH = 800;
-const CANVAS_HEIGHT = 600;
-canvas.width = CANVAS_WIDTH;
-canvas.height = CANVAS_HEIGHT;
-
 // ============================================================
-// VIEWPORT SCALE — Scales the ENTIRE game container uniformly
-// so that all UI (canvas + overlays + popups) stays in ratio.
+// DYNAMIC DIMENSIONS — calculated from actual viewport
 // ============================================================
-let viewportScale = 1;
+let CANVAS_WIDTH, CANVAS_HEIGHT;
+let ARENA_X, ARENA_Y, ARENA_RADIUS;
+let MARBLE_RADIUS;
+let MAX_DRAG_DIST;
 
-function fitToViewport() {
-    const scaleX = window.innerWidth  / CANVAS_WIDTH;
-    const scaleY = window.innerHeight / CANVAS_HEIGHT;
-    viewportScale = Math.min(scaleX, scaleY); // letterbox: fit the smaller dimension
-    gameContainer.style.transform = `scale(${viewportScale})`;
-}
-
-fitToViewport();
-window.addEventListener('resize', fitToViewport);
-// Also re-fit on orientation change (mobile)
-window.addEventListener('orientationchange', () => {
-    setTimeout(fitToViewport, 150); // Short delay lets browser finish layout
-});
-
-const ARENA_X = CANVAS_WIDTH / 2;
-const ARENA_Y = CANVAS_HEIGHT / 2;
-const ARENA_RADIUS = 180;
-
-const MARBLE_RADIUS = 12;
-const FRICTION = 0.985; // High friction for sand
-const MAX_DRAG_DIST = 150;
+const FRICTION = 0.985;
 const POWER_MULTIPLIER = 0.15;
 const MAX_TURNS = 10;
+
+function calcDimensions() {
+    CANVAS_WIDTH  = window.innerWidth;
+    CANVAS_HEIGHT = window.innerHeight;
+    canvas.width  = CANVAS_WIDTH;
+    canvas.height = CANVAS_HEIGHT;
+
+    ARENA_X      = CANVAS_WIDTH  / 2;
+    ARENA_Y      = CANVAS_HEIGHT / 2;
+    // Arena radius ~ 30% of shorter side, capped nicely
+    ARENA_RADIUS = Math.round(Math.min(CANVAS_WIDTH, CANVAS_HEIGHT) * 0.28);
+    // Marble radius proportional to arena
+    MARBLE_RADIUS = Math.round(ARENA_RADIUS / 14);
+    // Max drag distance proportional to arena
+    MAX_DRAG_DIST = ARENA_RADIUS * 0.85;
+}
+
+calcDimensions();
+
 
 // Game State
 let score = 0;
@@ -184,104 +179,115 @@ function initGame() {
 }
 
 function resetCueMarble() {
-    // Top side of the screen
-    cueMarble = new Marble(CANVAS_WIDTH / 2, CANVAS_HEIGHT - 60, '#fff', true);
+    // Đặt bi cái nằm gần cạnh dưới, căn giữa theo x
+    cueMarble = new Marble(CANVAS_WIDTH / 2, CANVAS_HEIGHT - MARBLE_RADIUS * 6, '#fff', true);
     marbles.push(cueMarble);
 }
 
+// ============================================================
+// BACKGROUND — off-screen canvas, redrawn on resize
+// ============================================================
 const bgCanvas = document.createElement('canvas');
-bgCanvas.width = CANVAS_WIDTH;
-bgCanvas.height = CANVAS_HEIGHT;
 const bgCtx = bgCanvas.getContext('2d');
 
 function initBackground() {
-    const TILE_SIZE = 80;
+    const W = CANVAS_WIDTH;
+    const H = CANVAS_HEIGHT;
+    bgCanvas.width  = W;
+    bgCanvas.height = H;
     
-    // Căn bản màu xám đen của xi măng (Grout color)
+    const TILE_SIZE = Math.round(Math.min(W, H) / 8); // ~8 tiles across shorter side
+    
+    // Nền mạch xi măng
     bgCtx.fillStyle = '#3a3a3a'; 
-    bgCtx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    bgCtx.fillRect(0, 0, W, H);
     
-    // Màu gạch thật (cam gạch / terracotta) nhưng giảm chói
-    for (let x = 0; x < CANVAS_WIDTH; x += TILE_SIZE) {
-        for (let y = 0; y < CANVAS_HEIGHT; y += TILE_SIZE) {
-            // Biến đổi màu sắc siêu mờ để giữ nguyên vẻ bằng phẳng
-            let baseVariance = Math.random() * 8 - 4;
-            let r = 205 + baseVariance;
-            let g = 100 + baseVariance;
-            let b = 55 + baseVariance;
-            
+    for (let x = 0; x < W; x += TILE_SIZE) {
+        for (let y = 0; y < H; y += TILE_SIZE) {
+            const baseVariance = Math.random() * 8 - 4;
+            const r = 205 + baseVariance, g = 100 + baseVariance, b = 55 + baseVariance;
             bgCtx.fillStyle = `rgb(${r}, ${g}, ${b})`;
-            // Khoảng cách mạch xi măng mỏng 1px
             bgCtx.fillRect(x + 1, y + 1, TILE_SIZE - 2, TILE_SIZE - 2);
             
-            // --- CẢI THIỆN TEXTURE CHI TIẾT CHO TỪNG VIÊN GẠCH ---
-            
-            // 1. Phủ một lớp vân sần mốc mờ (như rêu nhạt / vệt ố xám mờ trên gạch nung ngoài trời)
-            bgCtx.fillStyle = 'rgba(120, 100, 80, 0.15)'; // TĂNG ĐỘ ĐẬM LÊN 0.15
-            // Vẽ các khối loang lổ mờ
+            // Vân mốc/ố mờ
+            bgCtx.fillStyle = 'rgba(120, 100, 80, 0.15)';
             for (let j = 0; j < 4; j++) {
-                let wx = x + 2 + Math.random() * (TILE_SIZE - 10);
-                let wy = y + 2 + Math.random() * (TILE_SIZE - 10);
-                let wr = Math.random() * 20 + 5;
                 bgCtx.beginPath();
-                bgCtx.arc(wx, wy, wr, 0, Math.PI * 2);
+                bgCtx.arc(
+                    x + 2 + Math.random() * (TILE_SIZE - 10),
+                    y + 2 + Math.random() * (TILE_SIZE - 10),
+                    Math.random() * (TILE_SIZE * 0.25) + 4, 0, Math.PI * 2
+                );
                 bgCtx.fill();
             }
-
-            // 2. Thêm rỗ tổ ong (những lỗ xốp li ti của gạch ốp)
-            bgCtx.fillStyle = 'rgba(0, 0, 0, 0.2)'; // Điểm đen nhấn sâu hơn NHIỀU
-            for(let i = 0; i < 50; i++) {
-                let px = x + 2 + Math.random()*(TILE_SIZE-4);
-                let py = y + 2 + Math.random()*(TILE_SIZE-4);
-                bgCtx.fillRect(px, py, 1.5, 1.5);
+            // Rỗ tổ ong
+            bgCtx.fillStyle = 'rgba(0,0,0,0.2)';
+            for (let i = 0; i < 50; i++) {
+                bgCtx.fillRect(x + 2 + Math.random()*(TILE_SIZE-4), y + 2 + Math.random()*(TILE_SIZE-4), 1.5, 1.5);
             }
-            // Điểm đen to hơn một chút
-            bgCtx.fillStyle = 'rgba(0, 0, 0, 0.15)';
-            for(let i = 0; i < 20; i++) {
-                let px = x + 2 + Math.random()*(TILE_SIZE-5);
-                let py = y + 2 + Math.random()*(TILE_SIZE-5);
-                bgCtx.fillRect(px, py, 2, 2);
+            bgCtx.fillStyle = 'rgba(0,0,0,0.15)';
+            for (let i = 0; i < 20; i++) {
+                bgCtx.fillRect(x + 2 + Math.random()*(TILE_SIZE-5), y + 2 + Math.random()*(TILE_SIZE-5), 2, 2);
             }
-            
-            // 3. Hạt sáng (bụi đất trắng li ti, tăng cảm giác nhám)
-            bgCtx.fillStyle = 'rgba(255, 255, 255, 0.1)';
-            for(let i = 0; i < 80; i++) {
-                let px = x + 2 + Math.random()*(TILE_SIZE-4);
-                let py = y + 2 + Math.random()*(TILE_SIZE-4);
-                bgCtx.fillRect(px, py, 1.5, 1.5);
+            // Hạt sáng
+            bgCtx.fillStyle = 'rgba(255,255,255,0.1)';
+            for (let i = 0; i < 80; i++) {
+                bgCtx.fillRect(x + 2 + Math.random()*(TILE_SIZE-4), y + 2 + Math.random()*(TILE_SIZE-4), 1.5, 1.5);
             }
-            
-            // 4. Vệt xước nhẹ (sân trường hay có vệt mòn/xước dọc)
-            bgCtx.strokeStyle = 'rgba(0, 0, 0, 0.1)'; // Tăng độ đậm vết xước
+            // Vết xước
+            bgCtx.strokeStyle = 'rgba(0,0,0,0.1)';
             bgCtx.lineWidth = 1.5;
             bgCtx.beginPath();
-            for(let j=0; j<3; j++) {
-                let startX = x + Math.random() * TILE_SIZE;
-                let startY = y + Math.random() * TILE_SIZE;
-                bgCtx.moveTo(startX, startY);
-                // Xước một đoạn ngắn, chéo chéo
-                bgCtx.lineTo(startX + (Math.random()-0.5)*20, startY + (Math.random()-0.5)*20 + 10);
+            for (let j = 0; j < 3; j++) {
+                const sx = x + Math.random() * TILE_SIZE, sy = y + Math.random() * TILE_SIZE;
+                bgCtx.moveTo(sx, sy);
+                bgCtx.lineTo(sx + (Math.random()-0.5)*18, sy + (Math.random()-0.5)*18 + 8);
             }
             bgCtx.stroke();
-            
-            // --- KẾT THÚC TEXTURE ---
-            
-            // Bevel effect (Làm hiệu ứng nổi 3D nhẹ cho viên gạch)
-            // Viền sáng góc trên và trái (đón sáng)
-            bgCtx.fillStyle = 'rgba(255, 255, 255, 0.3)'; // Sáng hơn
-            bgCtx.fillRect(x + 1, y + 1, TILE_SIZE - 2, 2.5); // Top
-            bgCtx.fillRect(x + 1, y + 1, 2.5, TILE_SIZE - 2); // Left
-            
-            // Viền tối góc dưới và phải (đổ bóng xuống mạch)
-            bgCtx.fillStyle = 'rgba(0, 0, 0, 0.4)'; // Tối hơn
-            bgCtx.fillRect(x + 1, y + TILE_SIZE - 3.5, TILE_SIZE - 2, 2.5); // Bottom
-            bgCtx.fillRect(x + TILE_SIZE - 3.5, y + 1, 2.5, TILE_SIZE - 2); // Right
+            // Bevel
+            bgCtx.fillStyle = 'rgba(255,255,255,0.3)';
+            bgCtx.fillRect(x+1, y+1, TILE_SIZE-2, 2.5);
+            bgCtx.fillRect(x+1, y+1, 2.5, TILE_SIZE-2);
+            bgCtx.fillStyle = 'rgba(0,0,0,0.4)';
+            bgCtx.fillRect(x+1, y+TILE_SIZE-3.5, TILE_SIZE-2, 2.5);
+            bgCtx.fillRect(x+TILE_SIZE-3.5, y+1, 2.5, TILE_SIZE-2);
         }
     }
 }
 
-// Generate the background once
+// Đặt lại background khi thay đổi kích thước
+function handleResize() {
+    const oldArenaX = ARENA_X, oldArenaY = ARENA_Y, oldArenaR = ARENA_RADIUS;
+    const oldCueX = cueMarble ? cueMarble.pos.x : null;
+    const oldCueY = cueMarble ? cueMarble.pos.y : null;
+    
+    calcDimensions();
+    initBackground();
+    
+    // Scale lại vị trí các viên bi theo tỷ lệ arena mới
+    const scaleR = ARENA_RADIUS / oldArenaR;
+    for (let m of marbles) {
+        m.pos.x = ARENA_X + (m.pos.x - oldArenaX) * scaleR;
+        m.pos.y = ARENA_Y + (m.pos.y - oldArenaY) * scaleR;
+        m.radius = MARBLE_RADIUS;
+    }
+    // Bi cái: giữ khoảng cách tương đối tới arena
+    if (cueMarble) {
+        cueMarble.pos.x = CANVAS_WIDTH / 2;
+        cueMarble.pos.y = CANVAS_HEIGHT - MARBLE_RADIUS * 6;
+    }
+}
+
+// Khởi tạo background lần đầu
 initBackground();
+
+window.addEventListener('resize', () => {
+    clearTimeout(window._resizeTimer);
+    window._resizeTimer = setTimeout(handleResize, 120);
+});
+window.addEventListener('orientationchange', () => {
+    setTimeout(handleResize, 200);
+});
 
 function drawArena() {
     // Draw the pre-rendered terrazzo tile background
@@ -640,12 +646,12 @@ function gameLoop() {
 // ============================================================
 
 function getClientPos(clientX, clientY) {
-    // gameContainer is scaled via CSS transform, so its bounding rect
-    // is in SCREEN-space. We need to map to GAME-space (800×600).
-    const rect = gameContainer.getBoundingClientRect();
+    // Canvas fills viewport directly (no CSS transform scale)
+    // clientX/Y and canvas pixels are 1:1 (canvas size == window size)
+    const rect = canvas.getBoundingClientRect();
     return {
-        x: (clientX - rect.left) / viewportScale,
-        y: (clientY - rect.top)  / viewportScale
+        x: (clientX - rect.left) * (canvas.width  / rect.width),
+        y: (clientY - rect.top)  * (canvas.height / rect.height)
     };
 }
 
