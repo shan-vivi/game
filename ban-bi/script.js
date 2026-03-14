@@ -719,7 +719,7 @@ function endGame() {
             bonus2 = playerTurns[1] * 50;
             playerScores[0] += bonus1;
             playerScores[1] += bonus2;
-            bonusText = `Thắng sớm! P1 nhận +${bonus1}, P2 nhận +${bonus2}`;
+            bonusText = `Thưởng: P1 +${bonus1}, P2 +${bonus2}`;
         } else {
             bonusText = "Cả hai đều đã hết lượt bắn!";
         }
@@ -747,7 +747,6 @@ function endGame() {
                     <div style="color:#66ccff; text-align:center;">P1<br>${p1}</div>
                     <div style="color:#ff8844; text-align:center;">P2<br>${p2}</div>
                 </div>
-                ${allMarblesCleared ? `<div style="color:#44ff44; font-size:16px;">(Đã cộng điểm thưởng lượt dư cho cả hai)</div>` : ""}
             </div>
         `;
 
