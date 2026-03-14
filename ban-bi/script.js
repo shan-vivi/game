@@ -631,8 +631,9 @@ canvas.addEventListener('mousedown', (e) => {
     const pos = getMousePos(e);
     const mPos = new Vector(pos.x, pos.y);
     
-    // Check if clicked exactly on cue marble
-    if (mPos.dist(cueMarble.pos) < cueMarble.radius * 2) {
+    // Vùng chạm rộng hơn để dễ bấm trên mobile (3x bán kính)
+    const hitRadius = cueMarble.radius * 3.5;
+    if (mPos.dist(cueMarble.pos) < hitRadius) {
         isDragging = true;
         gameState = 'AIMING';
         mouseX = pos.x;
@@ -683,16 +684,14 @@ canvas.addEventListener('touchstart', (e) => {
 }, { passive: false });
 
 window.addEventListener('touchmove', (e) => {
-    if (isDragging) {
-        e.preventDefault();
-        const touch = e.touches[0];
-        if (touch) {
-            const mouseEvent = new MouseEvent('mousemove', {
-                clientX: touch.clientX,
-                clientY: touch.clientY
-            });
-            window.dispatchEvent(mouseEvent);
-        }
+    e.preventDefault();
+    const touch = e.touches[0];
+    if (touch) {
+        const mouseEvent = new MouseEvent('mousemove', {
+            clientX: touch.clientX,
+            clientY: touch.clientY
+        });
+        window.dispatchEvent(mouseEvent);
     }
 }, { passive: false });
 

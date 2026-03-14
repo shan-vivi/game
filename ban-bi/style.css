@@ -2,7 +2,8 @@
     margin: 0;
     padding: 0;
     box-sizing: border-box;
-    font-family: 'VT323', monospace; /* Updated to support Vietnamese */
+    font-family: 'VT323', monospace;
+    touch-action: none; /* Prevent default touch behaviors on game elements */
 }
 
 body {
@@ -10,19 +11,20 @@ body {
     display: flex;
     justify-content: center;
     align-items: center;
-    height: 100vh;
+    min-height: 100vh;
     overflow: hidden;
     color: #fff;
 }
 
 #game-container {
     position: relative;
-    width: 800px;
-    height: 600px;
+    /* Fixed aspect ratio 4:3, scales to fit viewport */
+    width: min(800px, 100vw, calc(100vh * 4/3));
+    height: min(600px, 75vw, 100vh);
     box-shadow: 0 0 20px rgba(0,0,0,0.8);
     border: 4px solid #5a3a22;
     border-radius: 10px;
-    background-color: #d1a876; /* fallback sand color */
+    background-color: #d1a876;
     overflow: hidden;
 }
 
@@ -38,28 +40,30 @@ canvas {
     left: 0;
     width: 100%;
     height: 100%;
-    pointer-events: none; /* Let clicks pass through to canvas */
+    pointer-events: none;
 }
 
 #score-board {
     position: absolute;
-    top: 20px;
-    left: 20px;
-    background: rgba(0, 0, 0, 0.5);
-    padding: 15px;
+    top: 10px;
+    left: 10px;
+    background: rgba(0, 0, 0, 0.6);
+    padding: 10px 12px;
     border-radius: 8px;
     border: 2px solid #fff;
     text-shadow: 2px 2px #000;
-    pointer-events: auto; /* Catch clicks for buttons inside */
+    pointer-events: auto;
     z-index: 10;
+    /* Scale with container using clamp */
+    font-size: clamp(14px, 3vw, 24px);
 }
 
 #score-board p {
-    margin-bottom: 10px;
-    font-size: 24px;
+    margin-bottom: 6px;
+    font-size: clamp(16px, 3.5vw, 24px);
 }
 
-#score-board p:last-child {
+#score-board p:last-of-type {
     margin-bottom: 0;
 }
 
@@ -67,39 +71,75 @@ canvas {
     display: none !important;
 }
 
-#game-over-modal {
-    pointer-events: auto; /* Catch clicks for the button */
+/* ======= MODALS (rules + leaderboard standalone) ======= */
+.modal {
+    pointer-events: auto;
     position: absolute;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    background: rgba(40, 20, 10, 0.9);
-    padding: 30px;
+    background: rgba(40, 20, 10, 0.95);
+    padding: clamp(15px, 3vw, 30px);
     border-radius: 10px;
     border: 4px solid #d4af37;
+    width: min(90%, 600px);
+    max-height: 85%;
+    overflow-y: auto;
     text-align: center;
     box-shadow: 0 0 30px #000;
     z-index: 100;
 }
 
+/* Both inline-styled modals will use max-width + % via these overrides */
+#leaderboard-modal-standalone,
+#rules-modal {
+    pointer-events: auto;
+    position: absolute !important;
+    top: 50% !important;
+    left: 50% !important;
+    transform: translate(-50%, -50%) !important;
+    width: min(90%, 520px) !important;
+    max-height: 85% !important;
+    overflow-y: auto !important;
+    z-index: 100 !important;
+}
+
+/* ======= GAME OVER MODAL ======= */
+#game-over-modal {
+    pointer-events: auto;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(40, 20, 10, 0.9);
+    padding: clamp(15px, 3vw, 30px);
+    border-radius: 10px;
+    border: 4px solid #d4af37;
+    text-align: center;
+    box-shadow: 0 0 30px #000;
+    z-index: 100;
+    width: min(90%, 420px);
+}
+
 #game-over-modal h2 {
     color: #ffcc00;
     margin-bottom: 15px;
-    font-size: 48px;
+    font-size: clamp(28px, 6vw, 48px);
     text-shadow: 2px 2px 0px #aa0000;
 }
 
 #game-over-modal p {
-    margin-bottom: 20px;
-    font-size: 24px;
+    margin-bottom: 15px;
+    font-size: clamp(16px, 3.5vw, 24px);
 }
 
 #game-over-modal h3 {
     margin-bottom: 10px;
-    font-size: 20px;
+    font-size: clamp(16px, 3vw, 20px);
     color: #aaa;
 }
 
+/* ======= LEADERBOARD LISTS ======= */
 #leaderboard-list, #standalone-leaderboard-list {
     list-style: none;
     margin-bottom: 20px;
@@ -110,11 +150,11 @@ canvas {
 }
 
 #leaderboard-list li, #standalone-leaderboard-list li {
-    font-size: 20px;
+    font-size: clamp(14px, 3vw, 20px);
     margin-bottom: 8px;
     display: grid;
-    grid-template-columns: 40px 1fr 1fr;
-    gap: 10px;
+    grid-template-columns: 36px 1fr auto;
+    gap: 8px;
     border-bottom: 1px dashed rgba(255,255,255,0.2);
     padding-bottom: 5px;
 }
@@ -129,12 +169,13 @@ canvas {
     color: #aaa;
 }
 
+/* ======= BUTTONS ======= */
 #restart-btn {
     background-color: #d4af37;
     color: #222;
     border: 2px solid #fff;
     padding: 10px 20px;
-    font-size: 16px;
+    font-size: clamp(14px, 3vw, 18px);
     cursor: pointer;
     border-radius: 5px;
     transition: all 0.2s;
@@ -144,4 +185,36 @@ canvas {
     background-color: #fff;
     color: #000;
     transform: scale(1.05);
+}
+
+/* Score board buttons responsive */
+#rules-btn, #leaderboard-btn {
+    width: 100%;
+    font-size: clamp(13px, 2.5vw, 16px) !important;
+    padding: clamp(5px, 1.5vw, 8px) !important;
+    cursor: pointer;
+    border-radius: 5px;
+    border: 2px solid #fff !important;
+}
+
+/* Tablets and smaller screens */
+@media (max-width: 600px) {
+    #score-board {
+        top: 8px;
+        left: 8px;
+        padding: 8px 10px;
+    }
+}
+
+/* Very small phones (portrait) – stack game to fill screen */
+@media (max-height: 500px) and (orientation: landscape) {
+    #game-container {
+        border-width: 2px;
+        border-radius: 5px;
+    }
+    #score-board {
+        top: 5px;
+        left: 5px;
+        padding: 5px 8px;
+    }
 }
