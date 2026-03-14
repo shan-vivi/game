@@ -262,10 +262,15 @@ function drawArena() {
 
 function drawAimLine() {
     if ((gameState !== 'AIMING' && gameState !== 'IDLE') || !cueMarble) return;
+    
+    // Tính toán hướng và lực kéo dựa trên cursor
     let dragDiff = new Vector(mouseX - cueMarble.pos.x, mouseY - cueMarble.pos.y);
-    let dist = Math.min(MAX_DRAG_DIST, dragDiff.mag());
-    if (gameState === 'AIMING' && dist > 5) {
-        let aimVector = dragDiff.mult(-1).normalize().mult(dist * 2);
+    let currentDist = dragDiff.mag();
+    let pullDist = (gameState === 'AIMING') ? Math.min(MAX_DRAG_DIST, currentDist) : 0;
+
+    if (gameState === 'AIMING' && pullDist > 5) {
+        // Đường dự báo (trajectory)
+        let aimVector = dragDiff.mult(-1).normalize().mult(pullDist * 2);
         ctx.beginPath();
         ctx.moveTo(cueMarble.pos.x, cueMarble.pos.y);
         ctx.lineTo(cueMarble.pos.x + aimVector.x, cueMarble.pos.y + aimVector.y);
@@ -275,55 +280,122 @@ function drawAimLine() {
         ctx.stroke();
         ctx.setLineDash([]);
     }
-    drawCatPaws(mouseX, mouseY, cueMarble.pos.x, cueMarble.pos.y, cueMarble.radius, dist);
+    
+    // Vẽ tay mèo chầu chực (IDLE) hoặc đang kéo (AIMING)
+    drawCatPaws(mouseX, mouseY, cueMarble.pos.x, cueMarble.pos.y, cueMarble.radius, pullDist);
 }
 
 function drawCatPaws(mx, my, cx, cy, radius, pullDist) {
     const angle = Math.atan2(cy - my, cx - mx);
     const s = radius;
+    
+    ctx.save();
+    // 1. CHUẨN BỊ WORLD SPACE CHO BI CÁI
+    const worldPullX = cx - Math.cos(angle) * pullDist;
+    const worldPullY = cy - Math.sin(angle) * pullDist;
+    
+    // Vẽ Bi Cái tại vị trí đang kéo (hoặc vị trí gốc nếu pullDist=0)
+    const originalPos = cueMarble.pos.copy();
+    cueMarble.pos = new Vector(worldPullX, worldPullY);
+    cueMarble.draw(ctx);
+    cueMarble.pos = originalPos;
+
+    // 2. VẼ TAY TRÁI (TAY TRẮNG - BRIDGE)
+    // Tay này luôn ở vị trí bi cái gốc
     ctx.save();
     ctx.translate(cx, cy);
     ctx.rotate(angle);
-
-    // Left Paw (Bridge)
-    ctx.save();
-    ctx.translate(0, s * 2.5);
-    ctx.fillStyle = '#ffffff';
-    ctx.beginPath();
-    ctx.moveTo(-s*2.5, s*6); ctx.lineTo(s*1.5, s*6); ctx.lineTo(s*1.2, 0); ctx.lineTo(-s*1.2, 0); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(0, 0, s*1.5, s*1.1, 0, 0, Math.PI*2); ctx.fill();
-    ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = s*0.15; ctx.stroke();
-    // Grip
-    ctx.save();
-    ctx.translate(0, -s*1.8);
-    ctx.beginPath(); ctx.roundRect(-s*0.5, -s*0.2, s, s*1.5, s*0.5); ctx.fill(); ctx.stroke();
-    ctx.restore();
-    ctx.restore();
-
-    // Pulled Ball
-    const px = -pullDist;
-    const worldX = cx + Math.cos(angle)*px;
-    const worldY = cy + Math.sin(angle)*px;
-    ctx.restore(); // back to world
-    ctx.save();
-    const oldP = cueMarble.pos.copy();
-    cueMarble.pos = new Vector(worldX, worldY);
-    cueMarble.draw(ctx);
-    cueMarble.pos = oldP;
     
-    // Right Paw
-    ctx.translate(worldX, worldY);
-    ctx.rotate(angle);
-    ctx.fillStyle = '#f4a460';
-    ctx.beginPath(); ctx.rect(-s*8, -s*1.2, s*7.5, s*2.4); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(-s*1.4, 0, s*1.15, s*1.6, 0, 0, Math.PI*2); ctx.fill();
+    // Dịch chuyển tay trái sang bên cạnh bi (lệch theo trục Y local)
+    ctx.save();
+    ctx.translate(0, s * 2.2);
+    
+    ctx.fillStyle = '#ffffff';
+    ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+    ctx.lineWidth = s * 0.15;
+    
+    // Cánh tay
+    ctx.beginPath();
+    ctx.moveTo(-s * 4, s * 8); 
+    ctx.lineTo(s * 2, s * 8); 
+    ctx.lineTo(s * 1.5, 0); 
+    ctx.lineTo(-s * 1.5, 0); 
+    ctx.fill();
+    
+    // Lòng bàn chân
+    ctx.beginPath();
+    ctx.ellipse(0, 0, s * 1.8, s * 1.4, 0, 0, Math.PI * 2);
+    ctx.fill();
     ctx.stroke();
-    // Fingers
-    const drawF = (bx, by) => {
-        ctx.beginPath(); ctx.arc(bx, by, s*0.5, 0, Math.PI*2); ctx.fill(); ctx.stroke();
-    };
-    drawF(0, -s*1.2); drawF(0, s*1.2);
+
+    // Ngón tay duỗi (đặt lên bi)
+    ctx.save();
+    ctx.translate(0, -s * 2);
+    ctx.beginPath();
+    ctx.roundRect(-s * 0.5, 0, s, s * 1.5, s * 0.5);
+    ctx.fill();
+    ctx.stroke();
+    // Đệm thịt
+    ctx.fillStyle = '#ffb6c1';
+    ctx.beginPath(); ctx.arc(0, s * 0.3, s * 0.35, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
+
+    // Các ngón chân gập
+    const drawToe = (tx, ty, tr) => {
+        ctx.save();
+        ctx.translate(tx, ty); ctx.rotate(tr);
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath(); ctx.ellipse(0, 0, s * 0.7, s * 0.5, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#ffb6c1';
+        ctx.beginPath(); ctx.arc(0, s * 0.1, s * 0.25, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+    };
+    drawToe(-s * 1.2, -s * 0.4, 0.4);
+    drawToe(-s * 0.4, -s * 0.8, 0);
+    drawToe( s * 0.6, -s * 0.7, -0.3);
+
+    ctx.restore(); // Hết translate tay trái
+    ctx.restore(); // Hết rotate/translate bi cái gốc
+
+    // 3. VẼ TAY PHẢI (TAY CAM - PULL)
+    // Tay này bám theo vị trí Bi Cái đang bị kéo
+    ctx.save();
+    ctx.translate(worldPullX, worldPullY);
+    ctx.rotate(angle);
+    
+    ctx.fillStyle = '#f4a460';
+    ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+    ctx.lineWidth = s * 0.15;
+    
+    // Cánh tay cam (kéo dài ra sau)
+    ctx.beginPath();
+    ctx.rect(-s * 12, -s * 1.2, s * 11, s * 2.4);
+    ctx.fill();
+    
+    // Bàn chân ôm bi
+    ctx.beginPath();
+    ctx.ellipse(-s * 1.5, 0, s * 1.6, s * 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    
+    // Đệm thịt lớn
+    ctx.fillStyle = '#ffb6c1';
+    ctx.beginPath(); ctx.ellipse(-s * 1.8, 0, s * 0.8, s * 1.2, 0, 0, Math.PI * 2); ctx.fill();
+
+    // Ngón tay kẹp bi
+    const drawClaw = (cx, cy) => {
+        ctx.fillStyle = '#f4a460';
+        ctx.beginPath(); ctx.arc(cx, cy, s * 0.6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#ffb6c1';
+        ctx.beginPath(); ctx.arc(cx + s * 0.1, cy, s * 0.35, 0, Math.PI * 2); ctx.fill();
+    };
+    drawClaw(s * 0.2, -s * 1.3);
+    drawClaw(-s * 0.8, -s * 1.8);
+    drawClaw(s * 0.2, s * 1.3);
+    drawClaw(-s * 0.8, s * 1.8);
+
+    ctx.restore();
+    ctx.restore(); // Back to world space
 }
 
 function checkCollisions() {
@@ -353,11 +425,22 @@ function checkCollisions() {
 function checkArenaBounds() {
     marbles.forEach(m => {
         if (!m.active) return;
-        if (m.pos.dist(new Vector(ARENA_X, ARENA_Y)) > ARENA_RADIUS + m.radius) {
-            if (!m.isCue) { playerScores[currentPlayer-1] += 100; m.active = false; updateUI(); }
+        
+        const distToCenter = m.pos.dist(new Vector(ARENA_X, ARENA_Y));
+        if (distToCenter > ARENA_RADIUS + m.radius) {
+            if (!m.isCue) { 
+                // Cộng điểm cho người chơi hiện tại khi bi con văng ra
+                playerScores[currentPlayer - 1] += 100; 
+                m.active = false; 
+                updateUI(); 
+            }
         }
-        if (m.pos.x < m.radius || m.pos.x > CANVAS_WIDTH - m.radius) m.vel.x *= -0.6;
-        if (m.pos.y < m.radius || m.pos.y > CANVAS_HEIGHT - m.radius) m.vel.y *= -0.6;
+        
+        // Ranh giới màn hình (bật lại)
+        if (m.pos.x < m.radius) { m.pos.x = m.radius; m.vel.x *= -0.6; }
+        if (m.pos.x > CANVAS_WIDTH - m.radius) { m.pos.x = CANVAS_WIDTH - m.radius; m.vel.x *= -0.6; }
+        if (m.pos.y < m.radius) { m.pos.y = m.radius; m.vel.y *= -0.6; }
+        if (m.pos.y > CANVAS_HEIGHT - m.radius) { m.pos.y = CANVAS_HEIGHT - m.radius; m.vel.y *= -0.6; }
     });
 }
 
@@ -384,29 +467,58 @@ function gameLoop() {
     if (gameState !== 'MENU') {
         drawArena();
         let moving = false;
+        
+        // Cập nhật và lọc bi còn hoạt động
         marbles = marbles.filter(m => m.active);
-        marbles.forEach(m => {
-            if (gameState === 'MOVING') { m.update(); if (m.vel.mag() > 0.1) moving = true; }
-            if (!((gameState === 'AIMING' || gameState === 'IDLE') && m.isCue)) m.draw(ctx);
-        });
+        
+        for (let m of marbles) {
+            if (gameState === 'MOVING') { 
+                m.update(); 
+                if (m.vel.mag() > 0.1) moving = true; 
+            }
+            
+            // Nếu là bi cái và đang ở trạng thái ngắm/chờ, SKIP vì drawAimLine sẽ vẽ nó (để bi co giãn theo tay)
+            if ((gameState === 'AIMING' || gameState === 'IDLE') && m.isCue) continue;
+            
+            m.draw(ctx);
+        }
+
         if (gameState === 'MOVING') {
-            checkCollisions(); checkArenaBounds();
+            checkCollisions(); 
+            checkArenaBounds();
+            
             if (!moving) {
+                // Kết thúc lượt bắn khi tất cả bi đã dừng
                 turnsLeft--;
+                
+                // Kiểm tra bi cái có bị văng ra ngoài không (phạt điểm)
                 const cue = marbles.find(m => m.isCue);
-                if (cue && cue.pos.dist(new Vector(ARENA_X, ARENA_Y)) > ARENA_RADIUS + cue.radius) {
-                    playerScores[currentPlayer-1] -= 50; cue.active = false;
+                if (cue) {
+                    const distToCenter = cue.pos.dist(new Vector(ARENA_X, ARENA_Y));
+                    if (distToCenter > ARENA_RADIUS + cue.radius) {
+                        playerScores[currentPlayer - 1] -= 50;
+                        cue.active = false;
+                    }
                 }
+                
                 updateUI();
-                if (turnsLeft <= 0 || marbles.filter(m => !m.isCue).length === 0) endGame();
-                else {
-                    if (numPlayers === 2) currentPlayer = currentPlayer === 1 ? 2 : 1;
+
+                const targetMarblesLeft = marbles.filter(m => !m.isCue).length;
+                if (turnsLeft <= 0 || targetMarblesLeft === 0) {
+                    endGame();
+                } else {
+                    // Chuyển người chơi nếu có 2 người
+                    if (numPlayers === 2) currentPlayer = (currentPlayer === 1) ? 2 : 1;
+                    
                     gameState = 'IDLE';
+                    // Nếu bi cái bị rơi mất, đặt lại bi cái mới
                     if (!marbles.find(m => m.isCue)) resetCueMarble();
                     updateUI();
                 }
             }
         }
+        
+        // Vẽ đường ngắm và tay mèo lên trên cùng
         drawAimLine();
     }
     requestAnimationFrame(gameLoop);
@@ -458,29 +570,87 @@ function updateLeaderboardUI(list) {
 
 function endGame() {
     gameState = 'GAMEOVER';
+    hideAllModals(); // Đảm bảo các popup khác đóng hết
+    
+    const scoresSummary = document.getElementById('scores-summary');
+    
     if (numPlayers === 1) {
         const win = marbles.filter(m => !m.isCue).length === 0;
         const bonus = win ? turnsLeft * 50 : 0;
         playerScores[0] += bonus;
-        endTitleEl.innerText = win ? "CHI\u1EBEN TH\u1EA0NG!" : "H\u1EBET L\u01AF\u1EE2T!";
-        bonusInfoEl.innerText = win ? `Th\u01B0\u1EDFng l\u01B0\u1EE2t th\u1EEBa: +${bonus}` : "";
+        
+        endTitleEl.innerText = win ? "CHIẾN THẮNG!" : "HẾT LƯỢT!";
+        endTitleEl.style.color = win ? "#44ff44" : "#ff4444";
+        
+        bonusInfoEl.innerText = win ? `Thưởng lượt thừa: +${bonus}` : "";
         bonusInfoEl.classList.toggle('hidden', !win);
-        finalScoreEl.innerText = playerScores[0];
+        
+        scoresSummary.innerHTML = `<p style="font-size: 24px;">Tổng điểm: ${playerScores[0]}</p>`;
+        finalScoreEl.innerText = ""; // Ẩn label cũ để dùng summary mới cho đẹp
+        
         updateLeaderboardUI(saveScore(playerScores[0]));
     } else {
-        const p1 = playerScores[0], p2 = playerScores[1];
-        endTitleEl.innerText = p1 > p2 ? "P1 TH\u1EA0NG!" : p2 > p1 ? "P2 TH\u1EA0NG!" : "H\u00D2A NHAU!";
-        document.getElementById('scores-summary').innerHTML = `<p>P1: ${p1}</p><p>P2: ${p2}</p>`;
+        const p1 = playerScores[0];
+        const p2 = playerScores[1];
+        
+        if (p1 > p2) {
+            endTitleEl.innerText = "P1 CHIẾN THẮNG!";
+            endTitleEl.style.color = "#66ccff";
+        } else if (p2 > p1) {
+            endTitleEl.innerText = "P2 CHIẾN THẮNG!";
+            endTitleEl.style.color = "#ff8844";
+        } else {
+            endTitleEl.innerText = "HÒA NHAU!";
+            endTitleEl.style.color = "#ffffff";
+        }
+        
+        bonusInfoEl.classList.add('hidden');
+        scoresSummary.innerHTML = `
+            <div style="display:flex; justify-content:space-around; gap:20px; font-size:24px; margin: 15px 0;">
+                <div style="color:#66ccff">P1: ${p1}</div>
+                <div style="color:#ff8844">P2: ${p2}</div>
+            </div>
+        `;
+        finalScoreEl.innerText = "";
     }
+    
     gameOverModal.classList.remove('hidden');
+}
+
+// HÀM HỖ TRỢ ĐÓNG TẤT CẢ POPUP
+function hideAllModals() {
+    rulesModal.classList.add('hidden');
+    leaderboardModalStandalone.classList.add('hidden');
+    gameOverModal.classList.add('hidden');
 }
 
 document.getElementById('btn-1p').addEventListener('click', () => initGame(1));
 document.getElementById('btn-2p').addEventListener('click', () => initGame(2));
-restartBtn.addEventListener('click', () => { gameState = 'MENU'; document.getElementById('mode-chooser').classList.remove('hidden'); gameOverModal.classList.add('hidden'); });
-rulesBtn.addEventListener('click', () => rulesModal.classList.remove('hidden'));
+
+restartBtn.addEventListener('click', () => { 
+    hideAllModals();
+    gameState = 'MENU'; 
+    document.getElementById('mode-chooser').classList.remove('hidden'); 
+});
+
+rulesBtn.addEventListener('click', () => {
+    hideAllModals();
+    rulesModal.classList.remove('hidden');
+});
+
 closeRulesBtn.addEventListener('click', () => rulesModal.classList.add('hidden'));
-leaderboardBtn.addEventListener('click', () => { updateLeaderboardUI(JSON.parse(localStorage.getItem(LEADERBOARD_KEY)) || []); leaderboardModalStandalone.classList.remove('hidden'); });
+
+leaderboardBtn.addEventListener('click', () => { 
+    hideAllModals();
+    updateLeaderboardUI(JSON.parse(localStorage.getItem(LEADERBOARD_KEY)) || []); 
+    leaderboardModalStandalone.classList.remove('hidden'); 
+});
+
 closeLeaderboardBtn.addEventListener('click', () => leaderboardModalStandalone.classList.add('hidden'));
+
+// Đóng popup bằng ESC
+window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') hideAllModals();
+});
 
 gameLoop();
