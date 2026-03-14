@@ -68,7 +68,7 @@ let cueMarble = null;
 let numPlayers = 1;
 let currentPlayer = 1;
 let playerScores = [0, 0];
-let turnsLeft = MAX_TURNS;
+let playerTurns = [MAX_TURNS, MAX_TURNS];
 
 let mouseX = 0;
 let mouseY = 0;
@@ -152,7 +152,7 @@ function initGame(players = 1) {
     numPlayers = players;
     currentPlayer = 1;
     playerScores = [0, 0];
-    turnsLeft = MAX_TURNS;
+    playerTurns = [MAX_TURNS, MAX_TURNS];
     marbles = [];
     calcDimensions();
     initBackground();
@@ -160,15 +160,31 @@ function initGame(players = 1) {
     // Pattern: 1 in center, 6 in hexagon
     const colors = ['#ff4444', '#44ff44', '#4444ff', '#ffff44', '#ff44ff', '#44ffff'];
     marbles.push(new Marble(ARENA_X, ARENA_Y, colors[0]));
-    const hexRadius = MARBLE_RADIUS * 2.5;
+    
+    // Vòng 1: 6 bi
+    const hexRadius1 = MARBLE_RADIUS * 2.5;
     for (let i = 0; i < 6; i++) {
         const angle = (Math.PI / 3) * i;
         marbles.push(new Marble(
-            ARENA_X + Math.cos(angle) * hexRadius,
-            ARENA_Y + Math.sin(angle) * hexRadius,
+            ARENA_X + Math.cos(angle) * hexRadius1,
+            ARENA_Y + Math.sin(angle) * hexRadius1,
             colors[(i % 5) + 1]
         ));
     }
+
+    // Nếu 2 người chơi, thêm vòng 2: 6 bi nữa (tổng 13 bi)
+    if (numPlayers === 2) {
+        const hexRadius2 = MARBLE_RADIUS * 4.5;
+        for (let i = 0; i < 6; i++) {
+            const angle = (Math.PI / 3) * i + (Math.PI / 6);
+            marbles.push(new Marble(
+                ARENA_X + Math.cos(angle) * hexRadius2,
+                ARENA_Y + Math.sin(angle) * hexRadius2,
+                colors[5 - (i % 5)]
+            ));
+        }
+    }
+
     resetCueMarble();
     
     gameState = 'IDLE';
@@ -468,7 +484,7 @@ function checkArenaBounds() {
 
 function updateUI() {
     const p1s = playerScores[0], p2s = playerScores[1];
-    turnsEl.innerText = turnsLeft;
+    turnsEl.innerText = playerTurns[currentPlayer - 1]; // Hiển thị lượt của người hiện tại
     const pi = document.getElementById('player-indicator');
     const p2r = document.getElementById('score-p2-row');
     const p1r = document.querySelector('#score-board p:nth-of-type(2)');
@@ -571,11 +587,9 @@ function gameLoop() {
             checkArenaBounds();
             
             if (!moving) {
-                // Đợi 1 frame để đảm bảo filter active bi ở đầu vòng lặp tiếp theo cập nhật
-                // Hoặc đơn giản là filter lại ngay tại đây để tính toán chính xác
                 const activeMarbles = marbles.filter(m => m.active);
                 
-                turnsLeft--;
+                playerTurns[currentPlayer - 1]--;
                 
                 // Kiểm tra bi cái
                 const cue = activeMarbles.find(m => m.isCue);
@@ -589,18 +603,22 @@ function gameLoop() {
                 
                 updateUI();
 
-                // Đọc lại số lượng bi con còn lại (không tính bi cái)
                 const targetMarblesLeft = activeMarbles.filter(m => !m.isCue && m.active).length;
+                const allOutTurns = numPlayers === 1 ? (playerTurns[0] <= 0) : (playerTurns[0] <= 0 && playerTurns[1] <= 0);
                 
-                if (targetMarblesLeft === 0 || turnsLeft <= 0) {
+                if (targetMarblesLeft === 0 || allOutTurns) {
                     endGame();
                 } else {
                     if (numPlayers === 2) {
-                        currentPlayer = (currentPlayer === 1) ? 2 : 1;
-                        showTurnNotify(`Đến lượt: P${currentPlayer}`);
+                        const nextPlayer = (currentPlayer === 1) ? 2 : 1;
+                        if (playerTurns[nextPlayer - 1] > 0) {
+                            currentPlayer = nextPlayer;
+                            showTurnNotify(`Đến lượt: P${currentPlayer}`);
+                        } else {
+                             showTurnNotify(`P${currentPlayer} bắn tiếp! (P${nextPlayer} hết lượt)`);
+                        }
                     }
                     gameState = 'IDLE';
-                    // Tìm lại bi cái sau khi đã phạt (nếu có)
                     const stillActiveCue = marbles.find(m => m.isCue && m.active);
                     if (!stillActiveCue) resetCueMarble();
                     updateUI();
@@ -645,28 +663,41 @@ canvas.addEventListener('touchmove', e => { e.preventDefault(); const t = e.touc
 canvas.addEventListener('touchend', handlePointerUp);
 
 const LEADERBOARD_KEY = 'banBiLeaderboard';
-function saveScore(s) {
+function saveScore(s, label = '') {
     let list = JSON.parse(localStorage.getItem(LEADERBOARD_KEY)) || [];
-    list.push({score: s, date: new Date().toLocaleDateString()});
+    list.push({
+        score: s, 
+        label: label,
+        date: new Date().toLocaleDateString()
+    });
     list.sort((a, b) => b.score - a.score);
     list = list.slice(0, 5);
     localStorage.setItem(LEADERBOARD_KEY, JSON.stringify(list));
     return list;
 }
 function updateLeaderboardUI(list) {
-    const html = list.map((e, i) => `<li>\u003cspan\u003e#${i+1}\u003c/span\u003e \u003cspan\u003e${e.score}\u003c/span\u003e \u003cspan\u003e${e.date}\u003c/span\u003e</li>`).join('');
-    leaderboardList.innerHTML = html; standaloneLeaderboardList.innerHTML = html;
+    const html = list.map((e, i) => {
+        return `<li>
+            <span class="lb-idx">#${i+1}</span> 
+            <span class="lb-label" style="color:#ffcc00">${e.label ? '('+e.label+')' : ''}</span>
+            <span class="lb-score">${e.score}</span> 
+            <span class="lb-date">${e.date}</span>
+        </li>`;
+    }).join('');
+    leaderboardList.innerHTML = html; 
+    standaloneLeaderboardList.innerHTML = html;
 }
 
 function endGame() {
     gameState = 'GAMEOVER';
-    hideAllModals(); // Đảm bảo các popup khác đóng hết
+    hideAllModals(); 
     
     const scoresSummary = document.getElementById('scores-summary');
-    
+    const allMarblesCleared = marbles.filter(m => !m.isCue && m.active).length === 0;
+
     if (numPlayers === 1) {
-        const win = marbles.filter(m => !m.isCue).length === 0;
-        const bonus = win ? turnsLeft * 50 : 0;
+        const win = allMarblesCleared;
+        const bonus = win ? playerTurns[0] * 50 : 0;
         playerScores[0] += bonus;
         
         endTitleEl.innerText = win ? "CHIẾN THẮNG!" : "HẾT LƯỢT!";
@@ -678,6 +709,11 @@ function endGame() {
         scoresSummary.innerHTML = `<p style="font-size: 24px;">Tổng điểm: ${playerScores[0]}</p>`;
         updateLeaderboardUI(saveScore(playerScores[0]));
     } else {
+        const bonus1 = allMarblesCleared ? playerTurns[0] * 50 : 0;
+        const bonus2 = allMarblesCleared ? playerTurns[1] * 50 : 0;
+        playerScores[0] += bonus1;
+        playerScores[1] += bonus2;
+
         const p1 = playerScores[0];
         const p2 = playerScores[1];
         
@@ -692,13 +728,19 @@ function endGame() {
             endTitleEl.style.color = "#ffffff";
         }
         
-        bonusInfoEl.classList.add('hidden');
+        bonusInfoEl.innerText = allMarblesCleared ? `Đã cộng thưởng lượt thừa cho cả 2!` : "Hết lượt bắn!";
+        bonusInfoEl.classList.remove('hidden');
+        
         scoresSummary.innerHTML = `
-            <div style="display:flex; justify-content:space-around; gap:20px; font-size:24px; margin: 15px 0;">
-                <div style="color:#66ccff">P1: ${p1}</div>
-                <div style="color:#ff8844">P2: ${p2}</div>
+            <div style="display:flex; justify-content:space-around; gap:10px; font-size:22px; margin: 15px 0;">
+                <div style="color:#66ccff; text-align:center;">P1<br>${p1}</div>
+                <div style="color:#ff8844; text-align:center;">P2<br>${p2}</div>
             </div>
         `;
+
+        saveScore(p1, 'P1');
+        const latestScores = saveScore(p2, 'P2');
+        updateLeaderboardUI(latestScores);
     }
     
     gameOverModal.classList.remove('hidden');

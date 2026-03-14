@@ -150,21 +150,22 @@ canvas {
 }
 
 #leaderboard-list li, #standalone-leaderboard-list li {
-    font-size: clamp(14px, 3.5vmin, 20px);
+    font-size: clamp(14px, 3vmin, 18px);
     margin-bottom: 8px;
     display: grid;
-    grid-template-columns: 36px 1fr auto;
+    grid-template-columns: 35px 50px 1fr auto;
     gap: 8px;
     align-items: center;
     border-bottom: 1px dashed rgba(255,255,255,0.2);
-    padding-bottom: 5px;
+    padding-bottom: 6px;
+    white-space: nowrap;
 }
 
-#leaderboard-list li span:nth-child(2),
-#standalone-leaderboard-list li span:nth-child(2) { color: #ffcc00; text-align: right; }
+.lb-idx { color: #888; }
+.lb-label { font-size: 0.85em; text-align: left; }
+.lb-score { color: #ffcc00; font-weight: bold; text-align: center; }
+.lb-date { color: #888; font-size: 0.8em; text-align: right; }
 
-#leaderboard-list li span:nth-child(3),
-#standalone-leaderboard-list li span:nth-child(3) { color: #aaa; text-align: right; }
 
 /* =============================================
    BUTTONS
