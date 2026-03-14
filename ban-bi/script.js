@@ -710,22 +710,16 @@ function endGame() {
         updateLeaderboardUI(saveScore(playerScores[0]));
     } else {
         // Trong chế độ 2P:
-        // - Người nào bắn văng viên bi cuối cùng (allMarblesCleared) sẽ được cộng điểm lượt dư của CHÍNH HỌ.
-        // - Việc này khuyến khích người chơi tranh nhau bắn viên cuối cùng để lấy bonus.
+        // Cộng điểm lượt dư cho CẢ HAI người chơi nếu thắng sớm (xóa hết bi)
         let bonusText = "";
         let bonus1 = 0, bonus2 = 0;
         
         if (allMarblesCleared) {
-            // currentPlayer là người vừa thực hiện cú bắn thành công cuối cùng
-            if (currentPlayer === 1) {
-                bonus1 = playerTurns[0] * 50;
-                playerScores[0] += bonus1;
-                bonusText = `P1 được thưởng +${bonus1} điểm thắng sớm!`;
-            } else {
-                bonus2 = playerTurns[1] * 50;
-                playerScores[1] += bonus2;
-                bonusText = `P2 được thưởng +${bonus2} điểm thắng sớm!`;
-            }
+            bonus1 = playerTurns[0] * 50;
+            bonus2 = playerTurns[1] * 50;
+            playerScores[0] += bonus1;
+            playerScores[1] += bonus2;
+            bonusText = `Thắng sớm! P1 nhận +${bonus1}, P2 nhận +${bonus2}`;
         } else {
             bonusText = "Cả hai đều đã hết lượt bắn!";
         }
@@ -753,8 +747,7 @@ function endGame() {
                     <div style="color:#66ccff; text-align:center;">P1<br>${p1}</div>
                     <div style="color:#ff8844; text-align:center;">P2<br>${p2}</div>
                 </div>
-                ${bonus1 > 0 ? `<div style="color:#44ff44; font-size:16px;">(Đã bao gồm +${bonus1} của P1)</div>` : ""}
-                ${bonus2 > 0 ? `<div style="color:#44ff44; font-size:16px;">(Đã bao gồm +${bonus2} của P2)</div>` : ""}
+                ${allMarblesCleared ? `<div style="color:#44ff44; font-size:16px;">(Đã cộng điểm thưởng lượt dư cho cả hai)</div>` : ""}
             </div>
         `;
 
