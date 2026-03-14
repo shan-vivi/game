@@ -37,13 +37,22 @@ function calcDimensions() {
     canvas.width  = CANVAS_WIDTH;
     canvas.height = CANVAS_HEIGHT;
 
-    ARENA_X      = CANVAS_WIDTH  / 2;
-    ARENA_Y      = CANVAS_HEIGHT / 2;
-    // Arena radius ~ 30% of shorter side, capped nicely
-    ARENA_RADIUS = Math.round(Math.min(CANVAS_WIDTH, CANVAS_HEIGHT) * 0.28);
-    // Marble radius proportional to arena
-    MARBLE_RADIUS = Math.round(ARENA_RADIUS / 14);
-    // Max drag distance proportional to arena
+    ARENA_X = CANVAS_WIDTH  / 2;
+    ARENA_Y = CANVAS_HEIGHT / 2;
+
+    // Tính ARENA_RADIUS từ cả 2 chiều độc lập:
+    //   - Theo chiều ngang: không được vượt quá 42% width (để còn khoảng trống hai bên)
+    //   - Theo chiều dọc:  không được vượt quá 32% height mỗi phía
+    //     (arena nằm giữa, phía trên cần scoreboard, phía dưới cần chỗ đặt bi cái)
+    //   - Capped tối đa 280px để desktop rộng không quá lớn
+    const maxByWidth  = CANVAS_WIDTH  * 0.42;
+    const maxByHeight = CANVAS_HEIGHT * 0.32;
+    ARENA_RADIUS = Math.round(Math.min(maxByWidth, maxByHeight, 280));
+
+    // Marble radius tỉ lệ với arena, tối thiểu 8px
+    MARBLE_RADIUS = Math.max(8, Math.round(ARENA_RADIUS / 13));
+
+    // Max drag distance tỉ lệ với arena
     MAX_DRAG_DIST = ARENA_RADIUS * 0.85;
 }
 
