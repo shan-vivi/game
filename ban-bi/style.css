@@ -3,7 +3,6 @@
     padding: 0;
     box-sizing: border-box;
     font-family: 'VT323', monospace;
-    /* Prevent all default touch gestures (scroll, zoom, long-press menu) on the whole app */
     -webkit-tap-highlight-color: transparent;
     -webkit-touch-callout: none;
 }
@@ -11,10 +10,9 @@
 html, body {
     width: 100%;
     height: 100%;
-    overflow: hidden; /* No page scroll on mobile */
-    background-color: #1a1a1a;
+    overflow: hidden;
+    background-color: #111;
     color: #fff;
-    /* Prevent iOS bounce scroll */
     overscroll-behavior: none;
 }
 
@@ -24,32 +22,36 @@ body {
     align-items: center;
 }
 
-/* ======= GAME CONTAINER — Auto-fits any screen keeping 800×600 ratio ======= */
+/* =====================================================
+   GAME CONTAINER: Always 800×600. Scale via JS.
+   The entire UI (canvas + overlays) lives inside here.
+   ===================================================== */
 #game-container {
     position: relative;
-    /* The container will be as big as possible while fitting the viewport and maintaining 4:3 ratio */
-    width: 100vw;
-    height: 100vh;
-    /* On wide screens cap at 800×600 */
-    max-width: 800px;
-    max-height: 600px;
-    /* On narrow screens shrink to fit height, maintaining ratio */
-    aspect-ratio: 4 / 3;
-    box-shadow: 0 0 20px rgba(0,0,0,0.8);
-    border: 3px solid #5a3a22;
-    border-radius: 8px;
+    width: 800px;
+    height: 600px;
+    /* transform-origin stays center; JS sets transform: scale(x) */
+    transform-origin: center center;
+    flex-shrink: 0;
+
+    box-shadow: 0 0 24px rgba(0,0,0,0.9);
+    border: 4px solid #5a3a22;
+    border-radius: 10px;
     background-color: #d1a876;
     overflow: hidden;
-    touch-action: none; /* Critical: blocks browser handling of touch on the game viewport */
+    touch-action: none;
 }
 
 canvas {
     display: block;
-    width: 100%;
-    height: 100%;
+    width: 800px;
+    height: 600px;
     touch-action: none;
 }
 
+/* =====================================================
+   UI LAYER
+   ===================================================== */
 #ui-layer {
     position: absolute;
     top: 0;
@@ -59,86 +61,48 @@ canvas {
     pointer-events: none;
 }
 
-/* ======= SCORE BOARD ======= */
+/* =====================================================
+   SCORE BOARD
+   ===================================================== */
 #score-board {
     position: absolute;
-    top: 10px;
-    left: 10px;
-    background: rgba(0, 0, 0, 0.65);
-    padding: 10px 14px;
+    top: 20px;
+    left: 20px;
+    background: rgba(0, 0, 0, 0.6);
+    padding: 14px 18px;
     border-radius: 8px;
-    border: 2px solid rgba(255,255,255,0.6);
+    border: 2px solid rgba(255,255,255,0.7);
     text-shadow: 1px 1px 2px #000;
     pointer-events: auto;
     z-index: 10;
-    /* Scale text with container using vw units capped at comfortable size */
-    font-size: clamp(13px, 2.8vw, 22px);
 }
 
 #score-board p {
-    margin-bottom: 5px;
-    font-size: clamp(15px, 3.2vw, 24px);
+    margin-bottom: 8px;
+    font-size: 24px;
     white-space: nowrap;
 }
 
-#score-board p:last-of-type {
-    margin-bottom: 2px;
-}
+#score-board p:last-of-type { margin-bottom: 0; }
 
-/* Buttons inside scoreboard */
 #rules-btn, #leaderboard-btn {
     display: block;
     width: 100%;
     font-family: 'VT323', monospace;
-    font-size: clamp(13px, 2.8vw, 16px) !important;
-    padding: clamp(5px, 1.5vw, 9px) 8px !important;
+    font-size: 16px !important;
+    padding: 8px 10px !important;
     cursor: pointer;
     border-radius: 5px;
     border: 2px solid #fff !important;
-    transition: opacity 0.15s;
     user-select: none;
+    transition: opacity 0.15s;
 }
 
 #rules-btn:active, #leaderboard-btn:active { opacity: 0.7; }
 
-/* ======= MODAL BASE ======= */
-.modal-base {
-    pointer-events: auto;
-    position: absolute !important;
-    top: 50% !important;
-    left: 50% !important;
-    transform: translate(-50%, -50%) !important;
-    background: rgba(30, 15, 8, 0.97) !important;
-    border: 3px solid #d4af37 !important;
-    border-radius: 10px;
-    padding: clamp(14px, 3vw, 28px) !important;
-    /* Width: as wide as needed but never wider than 92% of screen and max 560px */
-    width: min(92%, 560px) !important;
-    max-height: 88% !important;
-    overflow-y: auto !important;
-    box-shadow: 0 0 30px #000 !important;
-    z-index: 100 !important;
-    text-align: center;
-    /* Smooth scrolling on iOS */
-    -webkit-overflow-scrolling: touch;
-}
-
-/* Apply .modal-base to both inline-styled modals */
-#leaderboard-modal-standalone,
-#rules-modal {
-    pointer-events: auto;
-    position: absolute !important;
-    top: 50% !important;
-    left: 50% !important;
-    transform: translate(-50%, -50%) !important;
-    width: min(92%, 540px) !important;
-    max-height: 88% !important;
-    overflow-y: auto !important;
-    -webkit-overflow-scrolling: touch;
-    z-index: 100 !important;
-}
-
-/* ======= GAME OVER MODAL ======= */
+/* =====================================================
+   MODALS — positioned inside the 800×600 space
+   ===================================================== */
 #game-over-modal {
     pointer-events: auto;
     position: absolute;
@@ -146,40 +110,56 @@ canvas {
     left: 50%;
     transform: translate(-50%, -50%);
     background: rgba(30, 15, 8, 0.95);
-    padding: clamp(14px, 3vw, 28px);
+    padding: 28px 32px;
     border-radius: 10px;
-    border: 3px solid #d4af37;
+    border: 4px solid #d4af37;
     text-align: center;
     box-shadow: 0 0 30px #000;
     z-index: 100;
-    width: min(92%, 420px);
-    max-height: 88%;
+    width: 400px;
+    max-height: 560px;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
 }
 
 #game-over-modal h2 {
     color: #ffcc00;
-    margin-bottom: 12px;
-    font-size: clamp(26px, 6.5vw, 48px);
+    margin-bottom: 14px;
+    font-size: 48px;
     text-shadow: 2px 2px 0px #aa0000;
 }
 
 #game-over-modal p {
-    margin-bottom: 12px;
-    font-size: clamp(16px, 4vw, 24px);
+    margin-bottom: 14px;
+    font-size: 24px;
 }
 
 #game-over-modal h3 {
-    margin-bottom: 8px;
-    font-size: clamp(15px, 3.5vw, 20px);
+    margin-bottom: 10px;
+    font-size: 20px;
     color: #aaa;
 }
 
-/* ======= LEADERBOARD LISTS ======= */
+#leaderboard-modal-standalone,
+#rules-modal {
+    pointer-events: auto;
+    position: absolute !important;
+    top: 50% !important;
+    left: 50% !important;
+    transform: translate(-50%, -50%) !important;
+    width: 520px !important;
+    max-height: 560px !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+    z-index: 100 !important;
+}
+
+/* =====================================================
+   LEADERBOARD LISTS
+   ===================================================== */
 #leaderboard-list, #standalone-leaderboard-list {
     list-style: none;
-    margin-bottom: 16px;
+    margin-bottom: 18px;
     text-align: left;
     background: rgba(0,0,0,0.5);
     padding: 10px;
@@ -187,10 +167,10 @@ canvas {
 }
 
 #leaderboard-list li, #standalone-leaderboard-list li {
-    font-size: clamp(14px, 3.5vw, 20px);
+    font-size: 20px;
     margin-bottom: 8px;
     display: grid;
-    grid-template-columns: 36px 1fr auto;
+    grid-template-columns: 40px 1fr auto;
     gap: 8px;
     align-items: center;
     border-bottom: 1px dashed rgba(255,255,255,0.2);
@@ -207,39 +187,28 @@ canvas {
 #standalone-leaderboard-list li span:nth-child(3) {
     text-align: right;
     color: #aaa;
-    font-size: clamp(12px, 3vw, 17px);
 }
 
-/* ======= BUTTONS ======= */
+/* =====================================================
+   BUTTONS
+   ===================================================== */
 #restart-btn {
     background-color: #d4af37;
     color: #222;
     border: 2px solid #fff;
-    padding: clamp(8px, 2vw, 12px) clamp(16px, 4vw, 24px);
+    padding: 10px 24px;
     font-family: 'VT323', monospace;
-    font-size: clamp(15px, 4vw, 20px);
+    font-size: 20px;
     cursor: pointer;
     border-radius: 5px;
     transition: all 0.15s;
     user-select: none;
 }
 
-#restart-btn:hover,
-#restart-btn:active { background-color: #fff; color: #000; transform: scale(1.05); }
-
-.hidden {
-    display: none !important;
+#restart-btn:hover, #restart-btn:active {
+    background-color: #fff;
+    color: #000;
+    transform: scale(1.05);
 }
 
-/* ======= LANDSCAPE PHONE: shrink border ======= */
-@media (max-height: 420px) {
-    #game-container {
-        border-width: 2px;
-        border-radius: 4px;
-    }
-    #score-board {
-        padding: 5px 8px;
-        top: 5px;
-        left: 5px;
-    }
-}
+.hidden { display: none !important; }

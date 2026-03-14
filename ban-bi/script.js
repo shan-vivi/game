@@ -1,5 +1,6 @@
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
+const gameContainer = document.getElementById('game-container');
 
 // Game state UI elements
 const scoreEl = document.getElementById('score');
@@ -18,11 +19,31 @@ const leaderboardModalStandalone = document.getElementById('leaderboard-modal-st
 const closeLeaderboardBtn = document.getElementById('close-leaderboard-btn');
 const standaloneLeaderboardList = document.getElementById('standalone-leaderboard-list');
 
-// Constants
+// Constants — game logic always operates in 800×600 space
 const CANVAS_WIDTH = 800;
 const CANVAS_HEIGHT = 600;
 canvas.width = CANVAS_WIDTH;
 canvas.height = CANVAS_HEIGHT;
+
+// ============================================================
+// VIEWPORT SCALE — Scales the ENTIRE game container uniformly
+// so that all UI (canvas + overlays + popups) stays in ratio.
+// ============================================================
+let viewportScale = 1;
+
+function fitToViewport() {
+    const scaleX = window.innerWidth  / CANVAS_WIDTH;
+    const scaleY = window.innerHeight / CANVAS_HEIGHT;
+    viewportScale = Math.min(scaleX, scaleY); // letterbox: fit the smaller dimension
+    gameContainer.style.transform = `scale(${viewportScale})`;
+}
+
+fitToViewport();
+window.addEventListener('resize', fitToViewport);
+// Also re-fit on orientation change (mobile)
+window.addEventListener('orientationchange', () => {
+    setTimeout(fitToViewport, 150); // Short delay lets browser finish layout
+});
 
 const ARENA_X = CANVAS_WIDTH / 2;
 const ARENA_Y = CANVAS_HEIGHT / 2;
@@ -619,12 +640,12 @@ function gameLoop() {
 // ============================================================
 
 function getClientPos(clientX, clientY) {
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
+    // gameContainer is scaled via CSS transform, so its bounding rect
+    // is in SCREEN-space. We need to map to GAME-space (800×600).
+    const rect = gameContainer.getBoundingClientRect();
     return {
-        x: (clientX - rect.left) * scaleX,
-        y: (clientY - rect.top) * scaleY
+        x: (clientX - rect.left) / viewportScale,
+        y: (clientY - rect.top)  / viewportScale
     };
 }
 
