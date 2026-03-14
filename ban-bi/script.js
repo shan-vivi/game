@@ -703,16 +703,32 @@ function endGame() {
         endTitleEl.innerText = win ? "CHIẾN THẮNG!" : "HẾT LƯỢT!";
         endTitleEl.style.color = win ? "#44ff44" : "#ff4444";
         
-        bonusInfoEl.innerText = win ? `Thưởng lượt thừa: +${bonus}` : "";
+        bonusInfoEl.innerText = win ? `Thưởng lượt dư: +${bonus}` : "";
         bonusInfoEl.classList.toggle('hidden', !win);
         
         scoresSummary.innerHTML = `<p style="font-size: 24px;">Tổng điểm: ${playerScores[0]}</p>`;
         updateLeaderboardUI(saveScore(playerScores[0]));
     } else {
-        const bonus1 = allMarblesCleared ? playerTurns[0] * 50 : 0;
-        const bonus2 = allMarblesCleared ? playerTurns[1] * 50 : 0;
-        playerScores[0] += bonus1;
-        playerScores[1] += bonus2;
+        // Trong chế độ 2P:
+        // - Người nào bắn văng viên bi cuối cùng (allMarblesCleared) sẽ được cộng điểm lượt dư của CHÍNH HỌ.
+        // - Việc này khuyến khích người chơi tranh nhau bắn viên cuối cùng để lấy bonus.
+        let bonusText = "";
+        let bonus1 = 0, bonus2 = 0;
+        
+        if (allMarblesCleared) {
+            // currentPlayer là người vừa thực hiện cú bắn thành công cuối cùng
+            if (currentPlayer === 1) {
+                bonus1 = playerTurns[0] * 50;
+                playerScores[0] += bonus1;
+                bonusText = `P1 được thưởng +${bonus1} điểm thắng sớm!`;
+            } else {
+                bonus2 = playerTurns[1] * 50;
+                playerScores[1] += bonus2;
+                bonusText = `P2 được thưởng +${bonus2} điểm thắng sớm!`;
+            }
+        } else {
+            bonusText = "Cả hai đều đã hết lượt bắn!";
+        }
 
         const p1 = playerScores[0];
         const p2 = playerScores[1];
@@ -728,13 +744,17 @@ function endGame() {
             endTitleEl.style.color = "#ffffff";
         }
         
-        bonusInfoEl.innerText = allMarblesCleared ? `Đã cộng thưởng lượt thừa cho cả 2!` : "Hết lượt bắn!";
+        bonusInfoEl.innerText = bonusText;
         bonusInfoEl.classList.remove('hidden');
         
         scoresSummary.innerHTML = `
-            <div style="display:flex; justify-content:space-around; gap:10px; font-size:22px; margin: 15px 0;">
-                <div style="color:#66ccff; text-align:center;">P1<br>${p1}</div>
-                <div style="color:#ff8844; text-align:center;">P2<br>${p2}</div>
+            <div style="display:flex; flex-direction:column; gap:10px; margin: 15px 0;">
+                <div style="display:flex; justify-content:space-around; font-size:24px;">
+                    <div style="color:#66ccff; text-align:center;">P1<br>${p1}</div>
+                    <div style="color:#ff8844; text-align:center;">P2<br>${p2}</div>
+                </div>
+                ${bonus1 > 0 ? `<div style="color:#44ff44; font-size:16px;">(Đã bao gồm +${bonus1} của P1)</div>` : ""}
+                ${bonus2 > 0 ? `<div style="color:#44ff44; font-size:16px;">(Đã bao gồm +${bonus2} của P2)</div>` : ""}
             </div>
         `;
 
