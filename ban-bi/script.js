@@ -40,33 +40,27 @@ function calcDimensions() {
     ARENA_X = CANVAS_WIDTH  / 2;
     ARENA_Y = CANVAS_HEIGHT / 2;
 
-    // Tính ARENA_RADIUS từ cả 2 chiều độc lập:
-    //   - Theo chiều ngang: không được vượt quá 42% width (để còn khoảng trống hai bên)
-    //   - Theo chiều dọc:  không được vượt quá 32% height mỗi phía
-    //     (arena nằm giữa, phía trên cần scoreboard, phía dưới cần chỗ đặt bi cái)
-    //   - Capped tối đa 280px để desktop rộng không quá lớn
     const maxByWidth  = CANVAS_WIDTH  * 0.42;
     const maxByHeight = CANVAS_HEIGHT * 0.32;
     ARENA_RADIUS = Math.round(Math.min(maxByWidth, maxByHeight, 280));
 
-    // Marble radius tỉ lệ với arena, tối thiểu 8px
     MARBLE_RADIUS = Math.max(8, Math.round(ARENA_RADIUS / 13));
-
-    // Max drag distance tỉ lệ với arena
     MAX_DRAG_DIST = ARENA_RADIUS * 0.85;
 }
 
 calcDimensions();
 
-
-// Game State
-let score = 0;
-let turnsLeft = MAX_TURNS;
-let gameState = 'IDLE'; // IDLE, AIMING, MOVING, GAMEOVER
-let marbles = []; // Array of marble objects
+// ============================================================
+// GAME STATE
+// ============================================================
+let gameState = 'MENU'; // MENU, IDLE, AIMING, MOVING, GAMEOVER
+let marbles = [];
 let cueMarble = null;
+let numPlayers = 1;
+let currentPlayer = 1;
+let playerScores = [0, 0];
+let turnsLeft = MAX_TURNS;
 
-// Interaction state
 let mouseX = 0;
 let mouseY = 0;
 let isDragging = false;
@@ -77,7 +71,6 @@ class Vector {
         this.x = x;
         this.y = y;
     }
-    
     add(v) { return new Vector(this.x + v.x, this.y + v.y); }
     sub(v) { return new Vector(this.x - v.x, this.y - v.y); }
     mult(n) { return new Vector(this.x * n, this.y * n); }
@@ -85,10 +78,7 @@ class Vector {
     copy() { return new Vector(this.x, this.y); }
     normalize() {
         const m = this.mag();
-        if (m !== 0) {
-            return new Vector(this.x / m, this.y / m);
-        }
-        return new Vector(0, 0);
+        return m !== 0 ? new Vector(this.x / m, this.y / m) : new Vector(0, 0);
     }
     dist(v) { return this.sub(v).mag(); }
 }
@@ -106,32 +96,23 @@ class Marble {
 
     update() {
         if (!this.active) return;
-        
         this.pos = this.pos.add(this.vel);
         this.vel = this.vel.mult(FRICTION);
-
-        // Stop completely if moving very slowly
-        if (this.vel.mag() < 0.1) {
-            this.vel = new Vector(0, 0);
-        }
+        if (this.vel.mag() < 0.1) this.vel = new Vector(0, 0);
     }
 
     draw(ctx) {
         if (!this.active) return;
-
-        // Shadow
         ctx.beginPath();
         ctx.arc(this.pos.x + 3, this.pos.y + 3, this.radius, 0, Math.PI * 2);
         ctx.fillStyle = 'rgba(0,0,0,0.4)';
         ctx.fill();
 
-        // Marble body (radial gradient for 3D glass effect)
         let gradient = ctx.createRadialGradient(
             this.pos.x - this.radius/3, this.pos.y - this.radius/3, this.radius/10,
             this.pos.x, this.pos.y, this.radius
         );
-        
-        if (this.isCue) { // Bi cái usually white/transparentish
+        if (this.isCue) {
             gradient.addColorStop(0, '#ffffff');
             gradient.addColorStop(0.3, '#eeeeee');
             gradient.addColorStop(1, '#999999');
@@ -146,33 +127,29 @@ class Marble {
         ctx.fillStyle = gradient;
         ctx.fill();
 
-        // Highlight
         ctx.beginPath();
         ctx.arc(this.pos.x - this.radius/3, this.pos.y - this.radius/3, this.radius/3, 0, Math.PI * 2);
         ctx.fillStyle = 'rgba(255,255,255,0.7)';
         ctx.fill();
         
-        // Outline
         ctx.strokeStyle = 'rgba(0,0,0,0.5)';
         ctx.lineWidth = 1;
         ctx.stroke();
     }
 }
 
-function initGame() {
-    marbles = [];
-    score = 0;
+function initGame(players = 1) {
+    numPlayers = players;
+    currentPlayer = 1;
+    playerScores = [0, 0];
     turnsLeft = MAX_TURNS;
-    gameState = 'IDLE';
-    updateUI();
-    gameOverModal.classList.add('hidden');
-
-    // Create target marbles in the center
+    marbles = [];
+    calcDimensions();
+    initBackground();
+    
+    // Pattern: 1 in center, 6 in hexagon
     const colors = ['#ff4444', '#44ff44', '#4444ff', '#ffff44', '#ff44ff', '#44ffff'];
-    
-    // Pattern: 1 in center, 6 in hexagon around it
     marbles.push(new Marble(ARENA_X, ARENA_Y, colors[0]));
-    
     const hexRadius = MARBLE_RADIUS * 2.5;
     for (let i = 0; i < 6; i++) {
         const angle = (Math.PI / 3) * i;
@@ -182,21 +159,22 @@ function initGame() {
             colors[(i % 5) + 1]
         ));
     }
-
-    // Create Cue Marble outside the arena
     resetCueMarble();
+    
+    gameState = 'IDLE';
+    updateUI();
+    document.getElementById('mode-chooser').classList.add('hidden');
+    gameOverModal.classList.add('hidden');
 }
 
 function resetCueMarble() {
-    // Đặt bi cái ngay phía dưới vòng arena,
-    // cách mép vòng một khoảng cố định tỷ lệ với marble radius
     const cubeStartY = ARENA_Y + ARENA_RADIUS + MARBLE_RADIUS * 4;
     cueMarble = new Marble(ARENA_X, cubeStartY, '#fff', true);
     marbles.push(cueMarble);
 }
 
 // ============================================================
-// BACKGROUND — off-screen canvas, redrawn on resize
+// BACKGROUND
 // ============================================================
 const bgCanvas = document.createElement('canvas');
 const bgCtx = bgCanvas.getContext('2d');
@@ -206,113 +184,75 @@ function initBackground() {
     const H = CANVAS_HEIGHT;
     bgCanvas.width  = W;
     bgCanvas.height = H;
+    const TILE_SIZE = Math.round(Math.min(W, H) / 8);
     
-    const TILE_SIZE = Math.round(Math.min(W, H) / 8); // ~8 tiles across shorter side
-    
-    // Nền mạch xi măng
     bgCtx.fillStyle = '#3a3a3a'; 
     bgCtx.fillRect(0, 0, W, H);
     
     for (let x = 0; x < W; x += TILE_SIZE) {
         for (let y = 0; y < H; y += TILE_SIZE) {
-            const baseVariance = Math.random() * 8 - 4;
-            const r = 205 + baseVariance, g = 100 + baseVariance, b = 55 + baseVariance;
-            bgCtx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+            const bv = Math.random() * 8 - 4;
+            bgCtx.fillStyle = `rgb(${205 + bv}, ${100 + bv}, ${55 + bv})`;
             bgCtx.fillRect(x + 1, y + 1, TILE_SIZE - 2, TILE_SIZE - 2);
             
-            // Vân mốc/ố mờ
             bgCtx.fillStyle = 'rgba(120, 100, 80, 0.15)';
             for (let j = 0; j < 4; j++) {
                 bgCtx.beginPath();
-                bgCtx.arc(
-                    x + 2 + Math.random() * (TILE_SIZE - 10),
-                    y + 2 + Math.random() * (TILE_SIZE - 10),
-                    Math.random() * (TILE_SIZE * 0.25) + 4, 0, Math.PI * 2
-                );
+                bgCtx.arc(x + 2 + Math.random()*(TILE_SIZE-10), y + 2 + Math.random()*(TILE_SIZE-10), Math.random()*(TILE_SIZE*0.25)+4, 0, Math.PI*2);
                 bgCtx.fill();
             }
-            // Rỗ tổ ong
             bgCtx.fillStyle = 'rgba(0,0,0,0.2)';
-            for (let i = 0; i < 50; i++) {
-                bgCtx.fillRect(x + 2 + Math.random()*(TILE_SIZE-4), y + 2 + Math.random()*(TILE_SIZE-4), 1.5, 1.5);
-            }
-            bgCtx.fillStyle = 'rgba(0,0,0,0.15)';
-            for (let i = 0; i < 20; i++) {
-                bgCtx.fillRect(x + 2 + Math.random()*(TILE_SIZE-5), y + 2 + Math.random()*(TILE_SIZE-5), 2, 2);
-            }
-            // Hạt sáng
-            bgCtx.fillStyle = 'rgba(255,255,255,0.1)';
-            for (let i = 0; i < 80; i++) {
-                bgCtx.fillRect(x + 2 + Math.random()*(TILE_SIZE-4), y + 2 + Math.random()*(TILE_SIZE-4), 1.5, 1.5);
-            }
-            // Vết xước
+            for (let i = 0; i < 40; i++) bgCtx.fillRect(x + 2 + Math.random()*(TILE_SIZE-4), y + 2 + Math.random()*(TILE_SIZE-4), 1.5, 1.5);
             bgCtx.strokeStyle = 'rgba(0,0,0,0.1)';
             bgCtx.lineWidth = 1.5;
             bgCtx.beginPath();
-            for (let j = 0; j < 3; j++) {
-                const sx = x + Math.random() * TILE_SIZE, sy = y + Math.random() * TILE_SIZE;
+            for (let j = 0; j < 2; j++) {
+                const sx = x + Math.random()*TILE_SIZE, sy = y + Math.random()*TILE_SIZE;
                 bgCtx.moveTo(sx, sy);
                 bgCtx.lineTo(sx + (Math.random()-0.5)*18, sy + (Math.random()-0.5)*18 + 8);
             }
             bgCtx.stroke();
-            // Bevel
-            bgCtx.fillStyle = 'rgba(255,255,255,0.3)';
-            bgCtx.fillRect(x+1, y+1, TILE_SIZE-2, 2.5);
-            bgCtx.fillRect(x+1, y+1, 2.5, TILE_SIZE-2);
-            bgCtx.fillStyle = 'rgba(0,0,0,0.4)';
-            bgCtx.fillRect(x+1, y+TILE_SIZE-3.5, TILE_SIZE-2, 2.5);
-            bgCtx.fillRect(x+TILE_SIZE-3.5, y+1, 2.5, TILE_SIZE-2);
+            bgCtx.fillStyle = 'rgba(255,255,255,0.2)';
+            bgCtx.fillRect(x+1, y+1, TILE_SIZE-2, 2);
+            bgCtx.fillRect(x+1, y+1, 2, TILE_SIZE-2);
+            bgCtx.fillStyle = 'rgba(0,0,0,0.3)';
+            bgCtx.fillRect(x+1, y+TILE_SIZE-3, TILE_SIZE-2, 2);
+            bgCtx.fillRect(x+TILE_SIZE-3, y+1, 2, TILE_SIZE-2);
         }
     }
 }
 
-// Đặt lại background khi thay đổi kích thước
 function handleResize() {
-    const oldArenaX = ARENA_X, oldArenaY = ARENA_Y, oldArenaR = ARENA_RADIUS;
-    const oldCueX = cueMarble ? cueMarble.pos.x : null;
-    const oldCueY = cueMarble ? cueMarble.pos.y : null;
-    
+    const oldR = ARENA_RADIUS, oldX = ARENA_X, oldY = ARENA_Y;
     calcDimensions();
     initBackground();
-    
-    // Scale lại vị trí các viên bi theo tỷ lệ arena mới
-    const scaleR = ARENA_RADIUS / oldArenaR;
-    for (let m of marbles) {
-        m.pos.x = ARENA_X + (m.pos.x - oldArenaX) * scaleR;
-        m.pos.y = ARENA_Y + (m.pos.y - oldArenaY) * scaleR;
-        m.radius = MARBLE_RADIUS;
-    }
-    // Bi cái: giữ khoảng cách tương đối tới arena
-    if (cueMarble) {
-        cueMarble.pos.x = ARENA_X;
-        cueMarble.pos.y = ARENA_Y + ARENA_RADIUS + MARBLE_RADIUS * 4;
+    if (gameState !== 'MENU') {
+        const scale = ARENA_RADIUS / oldR;
+        marbles.forEach(m => {
+            m.pos.x = ARENA_X + (m.pos.x - oldX) * scale;
+            m.pos.y = ARENA_Y + (m.pos.y - oldY) * scale;
+            m.radius = MARBLE_RADIUS;
+        });
+        if (cueMarble && (gameState === 'IDLE' || gameState === 'AIMING')) {
+            cueMarble.pos.x = ARENA_X;
+            cueMarble.pos.y = ARENA_Y + ARENA_RADIUS + MARBLE_RADIUS * 4;
+        }
     }
 }
 
-// Khởi tạo background lần đầu
 initBackground();
-
 window.addEventListener('resize', () => {
-    clearTimeout(window._resizeTimer);
-    window._resizeTimer = setTimeout(handleResize, 120);
-});
-window.addEventListener('orientationchange', () => {
-    setTimeout(handleResize, 200);
+    clearTimeout(window._resTimer);
+    window._resTimer = setTimeout(handleResize, 150);
 });
 
 function drawArena() {
-    // Draw the pre-rendered terrazzo tile background
     ctx.drawImage(bgCanvas, 0, 0);
-
-    // 3. Draw Target Circle (Vòng ranh giới phấn trắng vẽ trên gạch)
     ctx.beginPath();
     ctx.arc(ARENA_X, ARENA_Y, ARENA_RADIUS, 0, Math.PI * 2);
-    // Vòng phấn ngoài
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)'; 
     ctx.lineWidth = 6;
     ctx.stroke();
-    
-    // Bụi phấn nhỏ bên trong
     ctx.beginPath();
     ctx.arc(ARENA_X, ARENA_Y, ARENA_RADIUS - 3, 0, Math.PI * 2);
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
@@ -322,545 +262,225 @@ function drawArena() {
 
 function drawAimLine() {
     if ((gameState !== 'AIMING' && gameState !== 'IDLE') || !cueMarble) return;
-
     let dragDiff = new Vector(mouseX - cueMarble.pos.x, mouseY - cueMarble.pos.y);
-    let dist = 0;
-    
-    let mx = mouseX;
-    let my = mouseY;
-    
-    // Khởi tạo hướng tay ban đầu nếu chưa rê chuột (hoặc chuột ở đúng vị trí bi cái)
-    if ((mx === 0 && my === 0) || (mx === cueMarble.pos.x && my === cueMarble.pos.y)) {
-        mx = cueMarble.pos.x;
-        my = cueMarble.pos.y + 100; // Mặc định hướng tay xuống dưới
+    let dist = Math.min(MAX_DRAG_DIST, dragDiff.mag());
+    if (gameState === 'AIMING' && dist > 5) {
+        let aimVector = dragDiff.mult(-1).normalize().mult(dist * 2);
+        ctx.beginPath();
+        ctx.moveTo(cueMarble.pos.x, cueMarble.pos.y);
+        ctx.lineTo(cueMarble.pos.x + aimVector.x, cueMarble.pos.y + aimVector.y);
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+        ctx.lineWidth = 3;
+        ctx.setLineDash([8, 8]);
+        ctx.stroke();
+        ctx.setLineDash([]);
     }
-
-    if (gameState === 'AIMING') {
-        dist = dragDiff.mag();
-        
-        if (dist > 0) {
-            if (dist > MAX_DRAG_DIST) {
-                dragDiff = dragDiff.normalize().mult(MAX_DRAG_DIST);
-                dist = MAX_DRAG_DIST;
-            }
-
-            // Draw dotted line in OPPOSITE direction of drag
-            let aimVector = dragDiff.mult(-1);
-            let endPoint = cueMarble.pos.add(aimVector.mult(2)); // Show trajectory further out
-
-            ctx.beginPath();
-            ctx.moveTo(cueMarble.pos.x, cueMarble.pos.y);
-            ctx.lineTo(endPoint.x, endPoint.y);
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
-            ctx.lineWidth = 3;
-            ctx.setLineDash([8, 8]);
-            ctx.stroke();
-            ctx.setLineDash([]); // Reset
-        }
-    }
-
-    // Luôn vẽ tay mèo chầu chực ở trạng thái IDLE hoặc AIMING
-    drawCatPaws(mx, my, cueMarble.pos.x, cueMarble.pos.y, cueMarble.radius, dist);
+    drawCatPaws(mouseX, mouseY, cueMarble.pos.x, cueMarble.pos.y, cueMarble.radius, dist);
 }
 
-function drawCatPaws(mx, my, cx, cy, radius, realDist) {
+function drawCatPaws(mx, my, cx, cy, radius, pullDist) {
     const angle = Math.atan2(cy - my, cx - mx);
-    const pullDist = Math.max(0, Math.min(MAX_DRAG_DIST, realDist));
-    
-    ctx.save(); // WORLD SPACE SAVE
-    
-    // Chuyển trục toạ độ đến tâm viên bi GỐC (chưa kéo)
-    // Hệ trục mới: Chiều dương X hướng vào mục tiêu, chiều âm X hướng về phía chuột.
+    const s = radius;
+    ctx.save();
     ctx.translate(cx, cy);
     ctx.rotate(angle);
-    
-    // TAY TRÁI (MÈO TRẮNG) - LÀM TRỤ (BRIDGE)
+
+    // Left Paw (Bridge)
     ctx.save();
-    // Đặt bàn chân trái nằm kế bên gốc bắn (lệch sang phải 20px)
-    ctx.translate(0, radius + 20);
-    
-    ctx.strokeStyle = 'rgba(0,0,0,0.3)';
-    ctx.lineWidth = 2;
-    
-    // Cánh tay mèo vươn ra (từ đằng sau lên)
+    ctx.translate(0, s * 2.5);
     ctx.fillStyle = '#ffffff';
     ctx.beginPath();
-    ctx.moveTo(-30, 80);
-    ctx.lineTo(20, 80);
-    ctx.lineTo(15, 0);
-    ctx.lineTo(-15, 0);
-    ctx.fill();
-    
-    // Lòng bàn chân (úp xuống đất)
-    ctx.beginPath();
-    ctx.ellipse(0, 0, 18, 14, 0, 0, Math.PI*2);
-    ctx.fill();
-    ctx.stroke();
-    
-    // Ngón tay duỗi thẳng vươn tới (0,0) làm trụ đạn
+    ctx.moveTo(-s*2.5, s*6); ctx.lineTo(s*1.5, s*6); ctx.lineTo(s*1.2, 0); ctx.lineTo(-s*1.2, 0); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(0, 0, s*1.5, s*1.1, 0, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = s*0.15; ctx.stroke();
+    // Grip
     ctx.save();
-    ctx.translate(0, -radius - 10); // Tịnh tiến lên sát mép viên bi gốc
-    // Vẽ ngón duỗi
-    ctx.beginPath();
-    ctx.roundRect(-6, -2, 12, 18, 6);
-    ctx.fill();
-    ctx.stroke();
-    // Đệm thịt hồng đầu ngón
-    ctx.fillStyle = '#ffb6c1';
-    ctx.beginPath(); ctx.arc(0, 2, 4, 0, Math.PI*2); ctx.fill();
+    ctx.translate(0, -s*1.8);
+    ctx.beginPath(); ctx.roundRect(-s*0.5, -s*0.2, s, s*1.5, s*0.5); ctx.fill(); ctx.stroke();
     ctx.restore();
-    
-    // Các ngón khác gập úp xuống đất (tạo cảm giác bàn chân đang chống đất)
-    const drawGripBean = (bx, by, rot) => {
-        ctx.save();
-        ctx.translate(bx, by);
-        ctx.rotate(rot);
-        ctx.fillStyle = '#ffffff';
-        ctx.beginPath(); ctx.ellipse(0, 0, 7, 5, 0, 0, Math.PI*2); ctx.fill(); ctx.stroke();
-        ctx.fillStyle = '#ffb6c1';
-        ctx.beginPath(); ctx.arc(0, 2, 2.5, 0, Math.PI*2); ctx.fill();
-        ctx.restore();
-    };
-    drawGripBean(-12, -4, 0.4);
-    drawGripBean(-4,  -8, 0);
-    drawGripBean(6,   -7, -0.3);
-    
-    // Đệm lòng bàn chân
-    ctx.fillStyle = '#ffb6c1';
-    ctx.beginPath(); ctx.ellipse(0, 3, 10, 6, 0, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
 
-    ctx.restore(); // KẾT THÚC TAY TRÁI TRỤ
-    
-    // VIÊN BI ĐANG KÉO (RIGHT PAW)
-    // Viên bi thực tế sẽ dịch chuyển về -pullDist (hướng về con chuột)
-    const pullyX = -pullDist;
-    
-    // Vẽ viên bi (Thay vì tính toạ độ phức tạp, ta chỉ cần thay local coords và vẽ)
-    // Chú ý: ctx đang rotate/translate, cueMarble.draw giả định toạ độ tuyệt đối,
-    // nên ta vẽ bi bằng toạ độ TÍNH RA TOÀN CỤC.
-    const pulledWorldX = cx - Math.cos(angle) * pullDist;
-    const pulledWorldY = cy - Math.sin(angle) * pullDist;
-    
-    // Tạm thời set toạ độ mới cho bi
-    const origPos = cueMarble.pos.copy();
-    cueMarble.pos = new Vector(pulledWorldX, pulledWorldY);
-
-    // Huỷ bỏ tịnh tiến cục bộ để vẽ bi và bóng râm không bị méo lệch
-    ctx.restore(); // Giải phóng ctx về mặc định WORLD SPACE
-    ctx.save(); // Lưu lại chuẩn WORLD SPACE để dùng vẽ bi
+    // Pulled Ball
+    const px = -pullDist;
+    const worldX = cx + Math.cos(angle)*px;
+    const worldY = cy + Math.sin(angle)*px;
+    ctx.restore(); // back to world
+    ctx.save();
+    const oldP = cueMarble.pos.copy();
+    cueMarble.pos = new Vector(worldX, worldY);
     cueMarble.draw(ctx);
-    cueMarble.pos = origPos; // Trả lại vị trí cho hệ vật lý ngay lập tức
+    cueMarble.pos = oldP;
     
-    // Bắt đầu vẽ TAY PHẢI KÉO BI (MÈO CAM)
-    // Tái thiết lập Hệ trục nằm ngay tại TÂM VIÊN BI ĐANG KÉO
-    ctx.translate(pulledWorldX, pulledWorldY);
+    // Right Paw
+    ctx.translate(worldX, worldY);
     ctx.rotate(angle);
-    
-    ctx.strokeStyle = 'rgba(0,0,0,0.3)';
-    ctx.lineWidth = 2;
-    
-    // Tay cam kéo giãn về phía âm X
     ctx.fillStyle = '#f4a460';
-    ctx.beginPath();
-    ctx.rect(-100, -14, 100 - radius - 5, 28); // Kéo dài từ ngực nối cổ tay
-    ctx.fill();
-    ctx.beginPath(); ctx.moveTo(-100, -14); ctx.lineTo(-radius-5, -14); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(-100, 14); ctx.lineTo(-radius-5, 14); ctx.stroke();
-    
-    // Gốc bàn tay bao quanh mặt sau viên bi
-    ctx.beginPath();
-    ctx.ellipse(-radius - 5, 0, 14, 20, 0, 0, Math.PI*2);
-    ctx.fill();
+    ctx.beginPath(); ctx.rect(-s*8, -s*1.2, s*7.5, s*2.4); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(-s*1.4, 0, s*1.15, s*1.6, 0, 0, Math.PI*2); ctx.fill();
     ctx.stroke();
-    // Đệm thịt to lòng bàn tay bóp
-    ctx.fillStyle = '#ffb6c1';
-    ctx.beginPath(); ctx.ellipse(-radius - 8, 0, 6, 10, 0, 0, Math.PI*2); ctx.fill();
-    
-    // Vẽ các ngón tay nhỏ (đệm thịt) đang quặp/kẹp viên bi thuỷ tinh
-    // Viên bi đang nằm ở (0,0) nên kẹp từ trên (radius) và dưới (radius)
-    const drawPinchBean = (bx, by) => {
-        ctx.fillStyle = '#f4a460';
-        ctx.beginPath(); ctx.arc(bx, by, 6, 0, Math.PI*2); ctx.fill(); ctx.stroke();
-        ctx.fillStyle = '#ffb6c1';
-        ctx.beginPath(); ctx.arc(bx + 1.5, by, 3.5, 0, Math.PI*2); ctx.fill();
+    // Fingers
+    const drawF = (bx, by) => {
+        ctx.beginPath(); ctx.arc(bx, by, s*0.5, 0, Math.PI*2); ctx.fill(); ctx.stroke();
     };
-    
-    drawPinchBean(0, -radius - 2);  // Kẹp đè bi từ trên
-    drawPinchBean(-radius + 2, -14); // Rìa trên phụ
-    drawPinchBean(0, radius + 2);   // Kẹp giữ bi từ dưới
-    drawPinchBean(-radius + 2, 14);  // Rìa dưới phụ
-    
-    ctx.restore(); // RELEASE RIGHT PAW
-    // Không cần release thêm vì đã release block WORLD SPACE ở giữa rồi
-}
-
-// Elastic collision resolution
-function resolveCollision(m1, m2) {
-    const xVelocityDiff = m1.vel.x - m2.vel.x;
-    const yVelocityDiff = m1.vel.y - m2.vel.y;
-
-    const xDist = m2.pos.x - m1.pos.x;
-    const yDist = m2.pos.y - m1.pos.y;
-
-    // Prevent accidental overlap from sticking
-    if (xVelocityDiff * xDist + yVelocityDiff * yDist >= 0) {
-        const angle = -Math.atan2(m2.pos.y - m1.pos.y, m2.pos.x - m1.pos.x);
-
-        // Mass is 1 for both
-        const m1Mass = m1.mass;
-        const m2Mass = m2.mass;
-
-        // Velocity components along the collision axis
-        const u1 = rotate(m1.vel, angle);
-        const u2 = rotate(m2.vel, angle);
-
-        // 1D Collision equations
-        const v1 = { x: u2.x, y: u1.y };
-        const v2 = { x: u1.x, y: u2.y };
-
-        // Rotate back
-        const vFinal1 = rotate(v1, -angle);
-        const vFinal2 = rotate(v2, -angle);
-
-        // Apply new velocities (add some dampening to simulate imperfect collision)
-        let bounceDampening = 0.95;
-        m1.vel = new Vector(vFinal1.x * bounceDampening, vFinal1.y * bounceDampening);
-        m2.vel = new Vector(vFinal2.x * bounceDampening, vFinal2.y * bounceDampening);
-    }
-}
-
-function rotate(velocity, angle) {
-    return {
-        x: velocity.x * Math.cos(angle) - velocity.y * Math.sin(angle),
-        y: velocity.x * Math.sin(angle) + velocity.y * Math.cos(angle)
-    };
-}
-
-function separateMarbles(m1, m2, dist) {
-    // Push marbles apart if they overlap to prevent getting stuck
-    const overlap = (m1.radius + m2.radius) - dist;
-    const pushVector = m1.pos.sub(m2.pos).normalize().mult(overlap / 2);
-    m1.pos = m1.pos.add(pushVector);
-    m2.pos = m2.pos.sub(pushVector);
+    drawF(0, -s*1.2); drawF(0, s*1.2);
+    ctx.restore();
 }
 
 function checkCollisions() {
     for (let i = 0; i < marbles.length; i++) {
         for (let j = i + 1; j < marbles.length; j++) {
-            let m1 = marbles[i];
-            let m2 = marbles[j];
+            let m1 = marbles[i], m2 = marbles[j];
             if (!m1.active || !m2.active) continue;
-
             let dist = m1.pos.dist(m2.pos);
             if (dist < m1.radius + m2.radius) {
-                separateMarbles(m1, m2, dist);
-                resolveCollision(m1, m2);
+                // simple separation
+                const overlap = (m1.radius + m2.radius) - dist;
+                const push = m1.pos.sub(m2.pos).normalize().mult(overlap/2);
+                m1.pos = m1.pos.add(push); m2.pos = m2.pos.sub(push);
+                // resolve
+                const normal = m1.pos.sub(m2.pos).normalize();
+                const relVel = m1.vel.sub(m2.vel);
+                const speed = relVel.x * normal.x + relVel.y * normal.y;
+                if (speed < 0) {
+                    const impulse = normal.mult(speed * 0.95);
+                    m1.vel = m1.vel.sub(impulse); m2.vel = m2.vel.add(impulse);
+                }
             }
         }
     }
 }
 
 function checkArenaBounds() {
-    for (let m of marbles) {
-        if (!m.active) continue;
-
-        let distToCenter = m.pos.dist(new Vector(ARENA_X, ARENA_Y));
-        
-        // Only trigger immediate knockout for target marbles
-        if (distToCenter > ARENA_RADIUS + m.radius) {
-            if (!m.isCue) {
-                // Target marble out of bounds -> Score!
-                score += 100;
-                updateUI();
-                m.active = false;
-            }
+    marbles.forEach(m => {
+        if (!m.active) return;
+        if (m.pos.dist(new Vector(ARENA_X, ARENA_Y)) > ARENA_RADIUS + m.radius) {
+            if (!m.isCue) { playerScores[currentPlayer-1] += 100; m.active = false; updateUI(); }
         }
-        
-        // Wall boundaries to prevent losing them completely offscreen (applies to all, including cue ball)
-        if (m.pos.x - m.radius < 0) { m.pos.x = m.radius; m.vel.x *= -1; }
-        if (m.pos.x + m.radius > CANVAS_WIDTH) { m.pos.x = CANVAS_WIDTH - m.radius; m.vel.x *= -1; }
-        if (m.pos.y - m.radius < 0) { m.pos.y = m.radius; m.vel.y *= -1; }
-        if (m.pos.y + m.radius > CANVAS_HEIGHT) { m.pos.y = CANVAS_HEIGHT - m.radius; m.vel.y *= -1; }
-    }
+        if (m.pos.x < m.radius || m.pos.x > CANVAS_WIDTH - m.radius) m.vel.x *= -0.6;
+        if (m.pos.y < m.radius || m.pos.y > CANVAS_HEIGHT - m.radius) m.vel.y *= -0.6;
+    });
 }
 
 function updateUI() {
-    scoreEl.innerText = score;
+    const p1s = playerScores[0], p2s = playerScores[1];
     turnsEl.innerText = turnsLeft;
+    const pi = document.getElementById('player-indicator');
+    const p2r = document.getElementById('score-p2-row');
+    const p1r = document.querySelector('#score-board p:nth-of-type(2)');
+    if (numPlayers === 2) {
+        pi.classList.remove('hidden'); pi.textContent = `\u{1F3AE} P${currentPlayer}`;
+        p2r.classList.remove('hidden'); document.getElementById('score-p2').innerText = p2s;
+        if (p1r) p1r.childNodes[0].textContent = "P1: ";
+        scoreEl.innerText = p1s;
+    } else {
+        pi.classList.add('hidden'); p2r.classList.add('hidden');
+        if (p1r) p1r.childNodes[0].textContent = "\u0110i\u1EC3m: ";
+        scoreEl.innerText = p1s;
+    }
 }
 
 function gameLoop() {
     ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-
-    drawArena();
-
-    let anyMoving = false;
-
-    // Remove inactive marbles
-    marbles = marbles.filter(m => m.active);
-
-    for (let m of marbles) {
+    if (gameState !== 'MENU') {
+        drawArena();
+        let moving = false;
+        marbles = marbles.filter(m => m.active);
+        marbles.forEach(m => {
+            if (gameState === 'MOVING') { m.update(); if (m.vel.mag() > 0.1) moving = true; }
+            if (!((gameState === 'AIMING' || gameState === 'IDLE') && m.isCue)) m.draw(ctx);
+        });
         if (gameState === 'MOVING') {
-            m.update();
-            if (m.vel.mag() > 0) anyMoving = true;
-        }
-
-        // Bỏ qua vẽ bi cái tại vị trí gốc vật lý nếu đang ngắm/chờ (để vẽ nó cùng tay mèo cho đồng bộ)
-        if ((gameState === 'AIMING' || gameState === 'IDLE') && m.isCue) continue;
-
-        m.draw(ctx);
-    }
-
-    if (gameState === 'MOVING') {
-        checkCollisions();
-        checkArenaBounds();
-
-        if (!anyMoving) {
-            // Turn ended
-            turnsLeft--;
-            
-            // Check cue ball position to see if it fell out
-            const cueActive = marbles.find(m => m.isCue);
-            if (cueActive) {
-                let distToCenter = cueActive.pos.dist(new Vector(ARENA_X, ARENA_Y));
-                if (distToCenter > ARENA_RADIUS + cueActive.radius) {
-                    score -= 50;
-                    cueActive.active = false; // Remove it
+            checkCollisions(); checkArenaBounds();
+            if (!moving) {
+                turnsLeft--;
+                const cue = marbles.find(m => m.isCue);
+                if (cue && cue.pos.dist(new Vector(ARENA_X, ARENA_Y)) > ARENA_RADIUS + cue.radius) {
+                    playerScores[currentPlayer-1] -= 50; cue.active = false;
                 }
-            }
-
-            updateUI();
-            
-            // Check if win (all target marbles gone)
-            const targetMarblesLeft = marbles.filter(m => !m.isCue && m.active).length;
-
-            if (turnsLeft <= 0 || targetMarblesLeft === 0) {
-                endGame();
-            } else {
-                gameState = 'IDLE';
-                // Reset cue marble if it was penalized and removed
-                const activeCue = marbles.find(m => m.isCue && m.active);
-                if (!activeCue) {
-                    resetCueMarble();
+                updateUI();
+                if (turnsLeft <= 0 || marbles.filter(m => !m.isCue).length === 0) endGame();
+                else {
+                    if (numPlayers === 2) currentPlayer = currentPlayer === 1 ? 2 : 1;
+                    gameState = 'IDLE';
+                    if (!marbles.find(m => m.isCue)) resetCueMarble();
+                    updateUI();
                 }
             }
         }
+        drawAimLine();
     }
-
-    drawAimLine();
-
     requestAnimationFrame(gameLoop);
 }
 
-// ============================================================
-// INPUT HANDLING - Unified Mouse + Touch (Native, no MouseEvent dispatch)
-// ============================================================
-
-function getClientPos(clientX, clientY) {
-    // Canvas fills viewport directly (no CSS transform scale)
-    // clientX/Y and canvas pixels are 1:1 (canvas size == window size)
-    const rect = canvas.getBoundingClientRect();
-    return {
-        x: (clientX - rect.left) * (canvas.width  / rect.width),
-        y: (clientY - rect.top)  * (canvas.height / rect.height)
-    };
-}
-
-// Compatibility shim cho code cũ vẫn dùng getMousePos
-function getMousePos(evt) {
-    return getClientPos(evt.clientX, evt.clientY);
-}
-
-// --- Shared core logic ---
-function handlePointerDown(clientX, clientY) {
+function handlePointerDown(cx, cy) {
     if (gameState !== 'IDLE' || !cueMarble) return;
-    const pos = getClientPos(clientX, clientY);
-    const mPos = new Vector(pos.x, pos.y);
-    // Vùng chạm lớn hơn để dùng ngón tay dễ hơn
-    const hitRadius = cueMarble.radius * 4;
-    if (mPos.dist(cueMarble.pos) < hitRadius) {
-        isDragging = true;
-        gameState = 'AIMING';
-        mouseX = pos.x;
-        mouseY = pos.y;
+    const rect = canvas.getBoundingClientRect();
+    const x = (cx - rect.left) * (canvas.width/rect.width);
+    const y = (cy - rect.top) * (canvas.height/rect.height);
+    if (new Vector(x, y).dist(cueMarble.pos) < MARBLE_RADIUS * 4) {
+        isDragging = true; gameState = 'AIMING'; mouseX = x; mouseY = y;
     }
 }
-
-function handlePointerMove(clientX, clientY) {
-    const pos = getClientPos(clientX, clientY);
-    mouseX = pos.x;
-    mouseY = pos.y;
+function handlePointerMove(cx, cy) {
+    const rect = canvas.getBoundingClientRect();
+    mouseX = (cx - rect.left) * (canvas.width/rect.width);
+    mouseY = (cy - rect.top) * (canvas.height/rect.height);
 }
-
-function handlePointerUp(clientX, clientY) {
+function handlePointerUp() {
     if (!isDragging || gameState !== 'AIMING') return;
     isDragging = false;
-
-    const pos = getClientPos(clientX, clientY);
-    let dragDiff = new Vector(pos.x - cueMarble.pos.x, pos.y - cueMarble.pos.y);
-
-    if (dragDiff.mag() > MAX_DRAG_DIST) {
-        dragDiff = dragDiff.normalize().mult(MAX_DRAG_DIST);
-    }
-
-    if (dragDiff.mag() > 5) {
-        cueMarble.vel = dragDiff.mult(-POWER_MULTIPLIER);
-        gameState = 'MOVING';
-    } else {
-        gameState = 'IDLE';
-    }
+    let diff = new Vector(mouseX - cueMarble.pos.x, mouseY - cueMarble.pos.y);
+    if (diff.mag() > MAX_DRAG_DIST) diff = diff.normalize().mult(MAX_DRAG_DIST);
+    if (diff.mag() > 5) { cueMarble.vel = diff.mult(-POWER_MULTIPLIER); gameState = 'MOVING'; }
+    else gameState = 'IDLE';
 }
 
-// --- Mouse Events ---
-canvas.addEventListener('mousedown', (e) => {
-    e.preventDefault();
-    handlePointerDown(e.clientX, e.clientY);
-});
+canvas.addEventListener('mousedown', e => handlePointerDown(e.clientX, e.clientY));
+window.addEventListener('mousemove', e => handlePointerMove(e.clientX, e.clientY));
+window.addEventListener('mouseup', handlePointerUp);
+canvas.addEventListener('touchstart', e => { e.preventDefault(); const t = e.touches[0]; handlePointerDown(t.clientX, t.clientY); }, {passive:false});
+canvas.addEventListener('touchmove', e => { e.preventDefault(); const t = e.touches[0]; handlePointerMove(t.clientX, t.clientY); }, {passive:false});
+canvas.addEventListener('touchend', handlePointerUp);
 
-window.addEventListener('mousemove', (e) => {
-    handlePointerMove(e.clientX, e.clientY);
-});
-
-window.addEventListener('mouseup', (e) => {
-    handlePointerUp(e.clientX, e.clientY);
-});
-
-// --- Touch Events (native, không dùng MouseEvent dispatch) ---
-canvas.addEventListener('touchstart', (e) => {
-    e.preventDefault(); // Tắt scroll/zoom khi chơi
-    const t = e.changedTouches[0];
-    if (t) handlePointerDown(t.clientX, t.clientY);
-}, { passive: false });
-
-canvas.addEventListener('touchmove', (e) => {
-    e.preventDefault(); // Tắt scroll trang khi kéo
-    const t = e.changedTouches[0];
-    if (t) handlePointerMove(t.clientX, t.clientY);
-}, { passive: false });
-
-canvas.addEventListener('touchend', (e) => {
-    e.preventDefault();
-    const t = e.changedTouches[0];
-    if (t) handlePointerUp(t.clientX, t.clientY);
-}, { passive: false });
-
-canvas.addEventListener('touchcancel', (e) => {
-    // Bị gián đoạn (vd: cuộc gọi đến) → huỷ lượt
-    isDragging = false;
-    if (gameState === 'AIMING') gameState = 'IDLE';
-});
-
-
-
-
-// Leaderboard Logic
 const LEADERBOARD_KEY = 'banBiLeaderboard';
-
-function saveScore(newScore) {
-    let scores = JSON.parse(localStorage.getItem(LEADERBOARD_KEY)) || [];
-    
-    // Add new score
-    scores.push({ score: newScore, date: new Date().toLocaleDateString() });
-    
-    // Sort descending
-    scores.sort((a, b) => b.score - a.score);
-    
-    // Keep top 5
-    scores = scores.slice(0, 5);
-    
-    localStorage.setItem(LEADERBOARD_KEY, JSON.stringify(scores));
-    return scores;
+function saveScore(s) {
+    let list = JSON.parse(localStorage.getItem(LEADERBOARD_KEY)) || [];
+    list.push({score: s, date: new Date().toLocaleDateString()});
+    list.sort((a, b) => b.score - a.score);
+    list = list.slice(0, 5);
+    localStorage.setItem(LEADERBOARD_KEY, JSON.stringify(list));
+    return list;
 }
-
-function updateLeaderboardUI(scores) {
-    leaderboardList.innerHTML = '';
-    standaloneLeaderboardList.innerHTML = '';
-    
-    if (scores.length === 0) {
-        leaderboardList.innerHTML = '<li>Chưa có dữ liệu</li>';
-        standaloneLeaderboardList.innerHTML = '<li>Chưa có dữ liệu</li>';
-        return;
-    }
-
-    scores.forEach((entry, index) => {
-        const html = `<span>#${index + 1}</span> <span>${entry.score} điểm</span> <span>${entry.date}</span>`;
-        const li = document.createElement('li');
-        li.innerHTML = html;
-        leaderboardList.appendChild(li);
-        
-        const liStand = document.createElement('li');
-        liStand.innerHTML = html;
-        standaloneLeaderboardList.appendChild(liStand);
-    });
+function updateLeaderboardUI(list) {
+    const html = list.map((e, i) => `<li>\u003cspan\u003e#${i+1}\u003c/span\u003e \u003cspan\u003e${e.score}\u003c/span\u003e \u003cspan\u003e${e.date}\u003c/span\u003e</li>`).join('');
+    leaderboardList.innerHTML = html; standaloneLeaderboardList.innerHTML = html;
 }
 
 function endGame() {
     gameState = 'GAMEOVER';
-    
-    // Bonus points logic
-    let bonus = 0;
-    const targetMarblesLeft = marbles.filter(m => !m.isCue && m.active).length;
-    
-    if (targetMarblesLeft === 0 && turnsLeft > 0) {
-        // Player won, calculate bonus (e.g. 50 points per remaining turn)
-        bonus = turnsLeft * 50;
-        endTitleEl.innerText = "CHIẾN THẮNG!";
-        endTitleEl.style.color = "#44ff44";
-        
-        bonusInfoEl.innerText = `Thưởng lượt thừa (${turnsLeft} lượt x 50): +${bonus}`;
-        bonusInfoEl.classList.remove('hidden');
+    if (numPlayers === 1) {
+        const win = marbles.filter(m => !m.isCue).length === 0;
+        const bonus = win ? turnsLeft * 50 : 0;
+        playerScores[0] += bonus;
+        endTitleEl.innerText = win ? "CHI\u1EBEN TH\u1EA0NG!" : "H\u1EBET L\u01AF\u1EE2T!";
+        bonusInfoEl.innerText = win ? `Th\u01B0\u1EDFng l\u01B0\u1EE2t th\u1EEBa: +${bonus}` : "";
+        bonusInfoEl.classList.toggle('hidden', !win);
+        finalScoreEl.innerText = playerScores[0];
+        updateLeaderboardUI(saveScore(playerScores[0]));
     } else {
-        // Player lost (ran out of turns)
-        endTitleEl.innerText = "HẾT LƯỢT!";
-        endTitleEl.style.color = "#ff4444";
-        bonusInfoEl.classList.add('hidden');
+        const p1 = playerScores[0], p2 = playerScores[1];
+        endTitleEl.innerText = p1 > p2 ? "P1 TH\u1EA0NG!" : p2 > p1 ? "P2 TH\u1EA0NG!" : "H\u00D2A NHAU!";
+        document.getElementById('scores-summary').innerHTML = `<p>P1: ${p1}</p><p>P2: ${p2}</p>`;
     }
-    
-    score += bonus;
-    finalScoreEl.innerText = score;
-    
-    // Save to leaderboard
-    const topScores = saveScore(score);
-    updateLeaderboardUI(topScores);
-    
     gameOverModal.classList.remove('hidden');
 }
 
-restartBtn.addEventListener('click', () => {
-    initGame();
-});
+document.getElementById('btn-1p').addEventListener('click', () => initGame(1));
+document.getElementById('btn-2p').addEventListener('click', () => initGame(2));
+restartBtn.addEventListener('click', () => { gameState = 'MENU'; document.getElementById('mode-chooser').classList.remove('hidden'); gameOverModal.classList.add('hidden'); });
+rulesBtn.addEventListener('click', () => rulesModal.classList.remove('hidden'));
+closeRulesBtn.addEventListener('click', () => rulesModal.classList.add('hidden'));
+leaderboardBtn.addEventListener('click', () => { updateLeaderboardUI(JSON.parse(localStorage.getItem(LEADERBOARD_KEY)) || []); leaderboardModalStandalone.classList.remove('hidden'); });
+closeLeaderboardBtn.addEventListener('click', () => leaderboardModalStandalone.classList.add('hidden'));
 
-// Layout and Modal Logic
-rulesBtn.addEventListener('click', () => {
-    leaderboardModalStandalone.classList.add('hidden'); // Close other popup
-    rulesModal.classList.remove('hidden');
-});
-
-closeRulesBtn.addEventListener('click', () => {
-    rulesModal.classList.add('hidden');
-});
-
-leaderboardBtn.addEventListener('click', () => {
-    rulesModal.classList.add('hidden'); // Close other popup
-    let scores = JSON.parse(localStorage.getItem(LEADERBOARD_KEY)) || [];
-    scores.sort((a, b) => b.score - a.score);
-    updateLeaderboardUI(scores);
-    leaderboardModalStandalone.classList.remove('hidden');
-});
-
-closeLeaderboardBtn.addEventListener('click', () => {
-    leaderboardModalStandalone.classList.add('hidden');
-});
-
-// Press ESC to close any modal
-window.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-        rulesModal.classList.add('hidden');
-        leaderboardModalStandalone.classList.add('hidden');
-    }
-});
-
-// Start game
-initGame();
 gameLoop();
-

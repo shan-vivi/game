@@ -183,3 +183,91 @@ canvas {
 #restart-btn:hover, #restart-btn:active { background-color: #fff; color: #000; transform: scale(1.05); }
 
 .hidden { display: none !important; }
+
+/* =============================================
+   MODE CHOOSER overlay
+   ============================================= */
+#mode-chooser {
+    pointer-events: auto;
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: clamp(10px, 3vmin, 24px);
+    background: rgba(20, 10, 5, 0.88);
+    z-index: 200;
+}
+
+#mode-chooser h2 {
+    font-size: clamp(28px, 7vmin, 56px);
+    color: #ffcc00;
+    text-shadow: 2px 2px 0 #a60000, 4px 4px 0 #000;
+    margin: 0;
+}
+
+#mode-chooser p {
+    font-size: clamp(16px, 4vmin, 28px);
+    color: #fff;
+}
+
+.mode-btns {
+    display: flex;
+    gap: clamp(12px, 3vw, 32px);
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.mode-btns button {
+    font-family: 'VT323', monospace;
+    font-size: clamp(18px, 4.5vmin, 32px);
+    padding: clamp(10px, 2.5vmin, 20px) clamp(18px, 4vmin, 40px);
+    border-radius: 10px;
+    border: 3px solid #fff;
+    cursor: pointer;
+    background: linear-gradient(135deg, #d4af37, #8b6914);
+    color: #fff;
+    text-shadow: 1px 1px 2px #000;
+    transition: transform 0.15s, brightness 0.15s;
+}
+.mode-btns button:hover, .mode-btns button:active {
+    transform: scale(1.08);
+    filter: brightness(1.2);
+}
+
+/* =============================================
+   SHARED modal popup style (used via class)
+   ============================================= */
+.modal-popup {
+    pointer-events: auto;
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(30, 15, 8, 0.96);
+    border: 3px solid #d4af37;
+    border-radius: 10px;
+    padding: clamp(14px, 3vmin, 28px);
+    width: min(92vw, 540px);
+    max-height: 88vh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    box-shadow: 0 0 30px #000;
+    z-index: 100;
+    text-align: center;
+}
+
+/* Shared close / action button */
+.btn-close {
+    background-color: #ff4444;
+    color: #fff;
+    border: 2px solid #fff;
+    padding: clamp(7px, 2vmin, 11px) clamp(14px, 3vmin, 22px);
+    font-family: 'VT323', monospace;
+    font-size: clamp(15px, 3.5vmin, 20px);
+    cursor: pointer;
+    border-radius: 5px;
+    margin-top: 14px;
+    transition: opacity 0.15s;
+}
+.btn-close:hover, .btn-close:active { opacity: 0.8; }

@@ -11,55 +11,69 @@
     <div id="game-container">
         <canvas id="gameCanvas"></canvas>
         <div id="ui-layer">
+
+            <!-- Score board -->
             <div id="score-board">
+                <p id="player-indicator" class="hidden" style="color:#ffcc00; font-size:clamp(13px,3vmin,20px); margin-bottom:6px;"></p>
                 <p>Điểm: <span id="score">0</span></p>
+                <p id="score-p2-row" class="hidden">P2: <span id="score-p2">0</span></p>
                 <p>Lượt: <span id="turns">10</span></p>
-                <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 10px;">
-                    <button id="rules-btn" style="width: 100%; font-size: 16px; padding: 8px; cursor: pointer; background: #66ccff; border: 2px solid #fff; border-radius: 5px; color: #000;">Luật Chơi</button>
-                    <button id="leaderboard-btn" style="width: 100%; font-size: 16px; padding: 8px; cursor: pointer; background: #ffaa00; border: 2px solid #fff; border-radius: 5px; color: #000;">Xếp Hạng</button>
+                <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px;">
+                    <button id="rules-btn" style="background:#66ccff;color:#000;">Luật Chơi</button>
+                    <button id="leaderboard-btn" style="background:#ffaa00;color:#000;">Xếp Hạng</button>
                 </div>
             </div>
-            
+
+            <!-- Mode chooser (shown before game starts) -->
+            <div id="mode-chooser">
+                <h2>🎮 BẮN BI 🎮</h2>
+                <p>Chọn chế độ chơi</p>
+                <div class="mode-btns">
+                    <button id="btn-1p">👤 1 Người Chơi</button>
+                    <button id="btn-2p">👥 2 Người Chơi</button>
+                </div>
+            </div>
+
+            <!-- Game over modal -->
             <div id="game-over-modal" class="hidden">
                 <h2 id="end-title">HẾT LƯỢT!</h2>
-                <p id="bonus-info" class="hidden" style="color:#44ff44; margin-bottom: 5px;">Thưởng lượt thừa: +0</p>
-                <p>Tổng điểm: <span id="final-score">0</span></p>
+                <p id="bonus-info" class="hidden" style="color:#44ff44;margin-bottom:5px;">Thưởng lượt thừa: +0</p>
+                <div id="scores-summary"></div>
                 <h3>Bảng Xếp Hạng</h3>
-                <ul id="leaderboard-list">
-                    <!-- Top 5 scores will be injected here -->
-                </ul>
+                <ul id="leaderboard-list"></ul>
                 <button id="restart-btn">CHƠI LẠI</button>
             </div>
 
-            <div id="leaderboard-modal-standalone" class="hidden" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(40, 20, 10, 0.95); padding: 30px; border-radius: 10px; border: 4px solid #d4af37; width: 500px; max-height: 80%; overflow-y: auto; pointer-events: auto; text-align: center; box-shadow: 0 0 30px #000; z-index: 100;">
-                <h2 style="color: #ffcc00; font-size: 32px; margin-bottom: 20px; text-shadow: 2px 2px 0px #aa0000;">BẢNG XẾP HẠNG</h2>
-                <ul id="standalone-leaderboard-list">
-                    <!-- Top 5 scores will be injected here -->
-                </ul>
-                <button id="close-leaderboard-btn" style="background-color: #ff4444; color: #fff; border: 2px solid #fff; padding: 10px 20px; font-size: 16px; cursor: pointer; border-radius: 5px; margin-top: 20px;">ĐÓNG</button>
+            <!-- Standalone leaderboard -->
+            <div id="leaderboard-modal-standalone" class="hidden modal-popup">
+                <h2 style="color:#ffcc00;font-size:clamp(22px,5vmin,32px);margin-bottom:16px;text-shadow:2px 2px 0px #aa0000;">BẢNG XẾP HẠNG</h2>
+                <ul id="standalone-leaderboard-list"></ul>
+                <button id="close-leaderboard-btn" class="btn-close">ĐÓNG</button>
             </div>
 
-            <div id="rules-modal" class="hidden" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(40, 20, 10, 0.95); padding: 25px; border-radius: 10px; border: 4px solid #d4af37; width: 600px; max-height: 80%; overflow-y: auto; pointer-events: auto; text-align: left; line-height: 1.5; box-shadow: 0 0 30px #000; z-index: 100;">
-                <h2 style="color: #ffcc00; text-align: center; font-size: 32px; margin-bottom: 20px;">Luật Chơi Bi</h2>
-                <div style="font-size: 20px;">
-                    <p style="margin-bottom: 10px;"><b>Cách chơi:</b></p>
-                    <ul style="margin-left: 20px; list-style-type: square; margin-bottom: 15px;">
-                        <li style="margin-bottom: 8px;">Dùng chuột hoặc tay nhấn vào <b>Bi Cái</b> (viên màu trắng) và <b>kéo ngược lại</b> hướng muốn bắn để lấy đà.</li>
-                        <li style="margin-bottom: 8px;">Thả tay ra để Bi Cái bắn vào các Bi Con (nhiều màu) đang nằm trong vòng tròn phấn.</li>
-                        <li style="margin-bottom: 8px;">Mục tiêu là bắn đẩy tất cả các Bi Con văng ra khỏi vòng tròn phấn trắng trong vòng <b>10 lượt đạn</b>.</li>
+            <!-- Rules modal -->
+            <div id="rules-modal" class="hidden modal-popup" style="text-align:left;">
+                <h2 style="color:#ffcc00;text-align:center;font-size:clamp(20px,5vmin,30px);margin-bottom:14px;">Luật Chơi Bi</h2>
+                <div style="font-size:clamp(14px,3.5vmin,20px);line-height:1.5;">
+                    <p style="margin-bottom:8px;"><b>Cách chơi:</b></p>
+                    <ul style="margin-left:18px;list-style-type:square;margin-bottom:12px;">
+                        <li style="margin-bottom:6px;">Nhấn vào <b>Bi Cái</b> (viên trắng) và <b>kéo ngược lại</b> hướng muốn bắn để lấy đà.</li>
+                        <li style="margin-bottom:6px;">Thả tay để Bi Cái bắn vào các Bi Con đang nằm trong vòng tròn phấn.</li>
+                        <li style="margin-bottom:6px;">Bắn đẩy tất cả Bi Con ra ngoài vòng trong <b>10 lượt đạn</b>.</li>
+                        <li style="margin-bottom:6px;">Chế độ 2 người: lượt đổi xen kẽ sau mỗi lần bắn, người nhiều điểm hơn thắng.</li>
                     </ul>
-                    
-                    <p style="margin-bottom: 10px; color: #ffcc00;"><b>Cách tính điểm:</b></p>
-                    <ul style="margin-left: 20px; list-style-type: square; margin-bottom: 15px;">
-                        <li style="margin-bottom: 8px; color: #44ff44;"><b>+100 điểm:</b> Mỗi khi một Bi Con bị bắn văng ra ngoài vòng.</li>
-                        <li style="margin-bottom: 8px; color: #ff4444;"><b>-50 điểm:</b> Nếu Bi Cái của bạn cũng bị trượt ra ngoài vòng sau cú bắn (Bi cái vẫn sẽ được đặt lại để bắn lượt tiếp theo).</li>
-                        <li style="margin-bottom: 8px; color: #44ff44;"><b>+50 điểm/lượt:</b> Thưởng thêm cho mỗi lượt bắn còn dư nếu bạn bắn hết Bi Con trước khi hết 10 lượt.</li>
+                    <p style="margin-bottom:8px;color:#ffcc00;"><b>Cách tính điểm:</b></p>
+                    <ul style="margin-left:18px;list-style-type:square;margin-bottom:12px;">
+                        <li style="margin-bottom:6px;color:#44ff44;"><b>+100 điểm:</b> Mỗi Bi Con bị bắn văng ra ngoài vòng.</li>
+                        <li style="margin-bottom:6px;color:#ff4444;"><b>-50 điểm:</b> Nếu Bi Cái cũng trượt ra ngoài sau cú bắn.</li>
+                        <li style="margin-bottom:6px;color:#44ff44;"><b>+50 điểm/lượt:</b> Thưởng cho mỗi lượt dư khi thắng sớm.</li>
                     </ul>
                 </div>
-                <div style="text-align: center; margin-top: 20px;">
-                    <button id="close-rules-btn" style="background-color: #ff4444; color: #fff; border: 2px solid #fff; padding: 10px 20px; font-size: 16px; cursor: pointer; border-radius: 5px;">ĐÃ HIỂU!</button>
+                <div style="text-align:center;margin-top:16px;">
+                    <button id="close-rules-btn" class="btn-close">ĐÃ HIỂU!</button>
                 </div>
             </div>
+
         </div>
     </div>
     <script src="script.js"></script>
