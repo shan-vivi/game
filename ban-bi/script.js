@@ -8,7 +8,7 @@ const turnsEl = document.getElementById('turns');
 const gameOverModal = document.getElementById('game-over-modal');
 const endTitleEl = document.getElementById('end-title');
 const bonusInfoEl = document.getElementById('bonus-info');
-const finalScoreEl = document.getElementById('final-score');
+const scoresSummaryEl = document.getElementById('scores-summary');
 const leaderboardList = document.getElementById('leaderboard-list');
 const restartBtn = document.getElementById('restart-btn');
 const rulesBtn = document.getElementById('rules-btn');
@@ -168,8 +168,14 @@ function initGame(players = 1) {
 }
 
 function resetCueMarble() {
-    const cubeStartY = ARENA_Y + ARENA_RADIUS + MARBLE_RADIUS * 4;
-    cueMarble = new Marble(ARENA_X, cubeStartY, '#fff', true);
+    // Đặt bi cái ở vị trí 80% từ tâm arena xuống theo chiều dọc trong vùng an toàn
+    const distance = ARENA_RADIUS + MARBLE_RADIUS * 5;
+    const cubeStartY = ARENA_Y + distance;
+    
+    // Nếu vị trí này vượt quá màn hình, đẩy ngược lên
+    const safeY = Math.min(cubeStartY, CANVAS_HEIGHT - MARBLE_RADIUS * 3);
+    
+    cueMarble = new Marble(ARENA_X, safeY, '#fff', true);
     marbles.push(cueMarble);
 }
 
@@ -488,11 +494,14 @@ function gameLoop() {
             checkArenaBounds();
             
             if (!moving) {
-                // Kết thúc lượt bắn khi tất cả bi đã dừng
+                // Đợi 1 frame để đảm bảo filter active bi ở đầu vòng lặp tiếp theo cập nhật
+                // Hoặc đơn giản là filter lại ngay tại đây để tính toán chính xác
+                const activeMarbles = marbles.filter(m => m.active);
+                
                 turnsLeft--;
                 
-                // Kiểm tra bi cái có bị văng ra ngoài không (phạt điểm)
-                const cue = marbles.find(m => m.isCue);
+                // Kiểm tra bi cái
+                const cue = activeMarbles.find(m => m.isCue);
                 if (cue) {
                     const distToCenter = cue.pos.dist(new Vector(ARENA_X, ARENA_Y));
                     if (distToCenter > ARENA_RADIUS + cue.radius) {
@@ -503,16 +512,17 @@ function gameLoop() {
                 
                 updateUI();
 
-                const targetMarblesLeft = marbles.filter(m => !m.isCue).length;
-                if (turnsLeft <= 0 || targetMarblesLeft === 0) {
+                // Đọc lại số lượng bi con còn lại (không tính bi cái)
+                const targetMarblesLeft = activeMarbles.filter(m => !m.isCue && m.active).length;
+                
+                if (targetMarblesLeft === 0 || turnsLeft <= 0) {
                     endGame();
                 } else {
-                    // Chuyển người chơi nếu có 2 người
                     if (numPlayers === 2) currentPlayer = (currentPlayer === 1) ? 2 : 1;
-                    
                     gameState = 'IDLE';
-                    // Nếu bi cái bị rơi mất, đặt lại bi cái mới
-                    if (!marbles.find(m => m.isCue)) resetCueMarble();
+                    // Tìm lại bi cái sau khi đã phạt (nếu có)
+                    const stillActiveCue = marbles.find(m => m.isCue && m.active);
+                    if (!stillActiveCue) resetCueMarble();
                     updateUI();
                 }
             }
@@ -586,8 +596,6 @@ function endGame() {
         bonusInfoEl.classList.toggle('hidden', !win);
         
         scoresSummary.innerHTML = `<p style="font-size: 24px;">Tổng điểm: ${playerScores[0]}</p>`;
-        finalScoreEl.innerText = ""; // Ẩn label cũ để dùng summary mới cho đẹp
-        
         updateLeaderboardUI(saveScore(playerScores[0]));
     } else {
         const p1 = playerScores[0];
@@ -611,7 +619,6 @@ function endGame() {
                 <div style="color:#ff8844">P2: ${p2}</div>
             </div>
         `;
-        finalScoreEl.innerText = "";
     }
     
     gameOverModal.classList.remove('hidden');
