@@ -3,7 +3,6 @@ const ctx = canvas.getContext('2d');
 const gameContainer = document.getElementById('game-container');
 
 // Game state UI elements
-const scoreEl = document.getElementById('score');
 const turnsEl = document.getElementById('turns');
 const gameOverModal = document.getElementById('game-over-modal');
 const endTitleEl = document.getElementById('end-title');
@@ -18,6 +17,20 @@ const leaderboardBtn = document.getElementById('leaderboard-btn');
 const leaderboardModalStandalone = document.getElementById('leaderboard-modal-standalone');
 const closeLeaderboardBtn = document.getElementById('close-leaderboard-btn');
 const standaloneLeaderboardList = document.getElementById('standalone-leaderboard-list');
+
+// New UI Elements
+const modeSelection = document.getElementById('mode-selection');
+const playerCountSetup = document.getElementById('player-count-setup');
+const playerNamesSetup = document.getElementById('player-names-setup');
+const playerCountSlider = document.getElementById('player-count-slider');
+const countDisplay = document.getElementById('count-display');
+const btnNextToNames = document.getElementById('btn-next-to-names');
+const btnBackToMode = document.getElementById('btn-back-to-mode');
+const btnStartGame = document.getElementById('btn-start-game');
+const btnBackToCount = document.getElementById('btn-back-to-count');
+const nameInputsContainer = document.getElementById('name-inputs-container');
+const playerScoresList = document.getElementById('player-scores-list');
+const btnMulti = document.getElementById('btn-multi');
 
 // ============================================================
 // DYNAMIC DIMENSIONS — calculated from actual viewport
@@ -67,13 +80,19 @@ let marbles = [];
 let cueMarble = null;
 let numPlayers = 1;
 let currentPlayer = 1;
-let playerScores = [0, 0];
-let playerTurns = [MAX_TURNS, MAX_TURNS];
+let playerScores = [];
+let playerTurns = [];
+let playerNames = [];
+let playerColors = ['#66ccff', '#ff8844', '#ffcc00', '#44ff44', '#ff44ff', '#44ffff', '#ff5555', '#aaff00', '#00ffaa', '#ffaaff'];
+let playerBoards = []; // To store marbles for each player
+let playerCues = [];   // To store cueMarble reference for each player
 
 let mouseX = 0;
 let mouseY = 0;
 let isDragging = false;
 let turnNotifyTimer = 0; // Timer for turn transition effect
+let isPlayoff = false;    // Whether we are in a tie-breaker round
+let masterResults = [];   // To keep track of all players across rounds
 
 // Vector helper
 class Vector {
@@ -148,67 +167,80 @@ class Marble {
     }
 }
 
-function initGame(players = 1) {
+function initGame(players = 1, names = []) {
     numPlayers = players;
     currentPlayer = 1;
-    playerScores = [0, 0];
-    playerTurns = [MAX_TURNS, MAX_TURNS];
-    marbles = [];
-    calcDimensions();
-    initBackground();
+    playerScores = new Array(numPlayers).fill(0);
+    playerTurns = new Array(numPlayers).fill(MAX_TURNS);
+    playerNames = names.length > 0 ? names : Array.from({length: numPlayers}, (_, i) => `P${i+1}`);
     
-    // Pattern: 1 in center, 6 in hexagon
-    const colors = ['#ff4444', '#44ff44', '#4444ff', '#ffff44', '#ff44ff', '#44ffff'];
-    marbles.push(new Marble(ARENA_X, ARENA_Y, colors[0]));
+    playerBoards = [];
+    playerCues = [];
     
-    // Vòng 1: 6 bi
-    const hexRadius1 = MARBLE_RADIUS * 2.5;
-    for (let i = 0; i < 6; i++) {
-        const angle = (Math.PI / 3) * i;
-        marbles.push(new Marble(
-            ARENA_X + Math.cos(angle) * hexRadius1,
-            ARENA_Y + Math.sin(angle) * hexRadius1,
-            colors[(i % 5) + 1]
-        ));
-    }
-
-    // Nếu 2 người chơi, thêm vòng 2: 6 bi nữa (tổng 13 bi)
-    if (numPlayers === 2) {
-        const hexRadius2 = MARBLE_RADIUS * 4.5;
+    // Create a separate board for each player
+    for (let p = 0; p < numPlayers; p++) {
+        let currentMarbles = [];
+        calcDimensions();
+        
+        // Use 1P layout for EVERY player (7 marbles total)
+        const marbleColors = ['#ff4444', '#44ff44', '#4444ff', '#ffff44', '#ff44ff', '#44ffff'];
+        currentMarbles.push(new Marble(ARENA_X, ARENA_Y, marbleColors[0]));
+        
+        // Standard 6 bi con ring
+        const ringRadius = MARBLE_RADIUS * 2.5;
         for (let i = 0; i < 6; i++) {
-            const angle = (Math.PI / 3) * i + (Math.PI / 6);
-            marbles.push(new Marble(
-                ARENA_X + Math.cos(angle) * hexRadius2,
-                ARENA_Y + Math.sin(angle) * hexRadius2,
-                colors[5 - (i % 5)]
+            const angle = (Math.PI / 3) * i;
+            currentMarbles.push(new Marble(
+                ARENA_X + Math.cos(angle) * ringRadius,
+                ARENA_Y + Math.sin(angle) * ringRadius,
+                marbleColors[(i % 5) + 1]
             ));
         }
+
+        // Setup Cue Marble
+        const distance = ARENA_RADIUS + MARBLE_RADIUS * 4.5;
+        let startY = ARENA_Y + distance;
+        const minBottomMargin = MAX_DRAG_DIST + MARBLE_RADIUS * 2;
+        if (startY > CANVAS_HEIGHT - minBottomMargin) startY = CANVAS_HEIGHT - minBottomMargin;
+        
+        const cue = new Marble(ARENA_X, startY, '#fff', true);
+        currentMarbles.push(cue);
+        
+        playerBoards[p] = currentMarbles;
+        playerCues[p] = cue;
     }
 
-    resetCueMarble();
+    // Set initial active state to P1's board
+    marbles = playerBoards[0];
+    cueMarble = playerCues[0];
     
+    initBackground();
     gameState = 'IDLE';
     updateUI();
     document.getElementById('mode-chooser').classList.add('hidden');
     gameOverModal.classList.add('hidden');
     
-    if (numPlayers === 2) showTurnNotify(`Lượt: P${currentPlayer}`);
+    showTurnNotify(isPlayoff ? `VÒNG PHỤ: ${playerNames[0]}` : `Lượt: ${playerNames[0]} (Sân riêng)`);
 }
 
-function resetCueMarble() {
-    // Đặt bi cái cách tâm vòng tròn một khoảng tỉ lệ
-    const distance = ARENA_RADIUS + MARBLE_RADIUS * 4.5;
-    let cubeStartY = ARENA_Y + distance;
+function startPlayoff(tiedNames, tiedColors) {
+    isPlayoff = true;
+    showTurnNotify("VÒNG ĐẤU PHỤ!");
     
-    // Đảm bảo bi cái luôn nằm trên mép dưới ít nhất một khoảng MAX_DRAG_DIST 
-    // để người chơi có đủ room kéo lùi tăng lực bắn
-    const minBottomMargin = MAX_DRAG_DIST + MARBLE_RADIUS * 2;
-    if (cubeStartY > CANVAS_HEIGHT - minBottomMargin) {
-        cubeStartY = CANVAS_HEIGHT - minBottomMargin;
-    }
-    
-    cueMarble = new Marble(ARENA_X, cubeStartY, '#fff', true);
-    marbles.push(cueMarble);
+    // In playoff, we only use the players who tied
+    setTimeout(() => {
+        initGame(tiedNames.length, tiedNames);
+        // Overwrite colors to keep them consistent with original players
+        playerColors = tiedColors;
+        updateUI();
+    }, 1600);
+}
+
+// Function to handle board switching
+function switchPlayerBoard(nextIdxPlusOne) {
+    const nextIdx = nextIdxPlusOne - 1;
+    marbles = playerBoards[nextIdx];
+    cueMarble = playerCues[nextIdx];
 }
 
 // ============================================================
@@ -483,45 +515,37 @@ function checkArenaBounds() {
 }
 
 function updateUI() {
-    const p1s = playerScores[0], p2s = playerScores[1];
-    turnsEl.innerText = playerTurns[currentPlayer - 1]; // Hiển thị lượt của người hiện tại
+    turnsEl.innerText = playerTurns[currentPlayer - 1];
     const pi = document.getElementById('player-indicator');
-    const p2r = document.getElementById('score-p2-row');
-    const p1r = document.querySelector('#score-board p:nth-of-type(2)');
     
-    if (numPlayers === 2) {
+    if (numPlayers > 1) {
         pi.classList.remove('hidden'); 
-        pi.textContent = `🎮 Lượt P${currentPlayer}`;
-        pi.style.color = currentPlayer === 1 ? '#66ccff' : '#ff8844';
+        pi.textContent = `🎮 Đang bắn: ${playerNames[currentPlayer - 1]}`;
+        pi.style.color = playerColors[(currentPlayer - 1) % playerColors.length];
         
-        p2r.classList.remove('hidden'); 
-        document.getElementById('score-p2').innerText = p2s;
-        
-        if (p1r) {
-            p1r.childNodes[0].textContent = "P1: ";
-            // Highlight current player row
-            p1r.style.background = currentPlayer === 1 ? 'rgba(102, 204, 255, 0.25)' : 'transparent';
-            p1r.style.borderLeft = currentPlayer === 1 ? '4px solid #66ccff' : 'none';
-            p1r.style.paddingLeft = currentPlayer === 1 ? '10px' : '0px';
-        }
-        
-        if (p2r) {
-            p2r.style.background = currentPlayer === 2 ? 'rgba(255, 136, 68, 0.25)' : 'transparent';
-            p2r.style.borderLeft = currentPlayer === 2 ? '4px solid #ff8844' : 'none';
-            p2r.style.paddingLeft = currentPlayer === 2 ? '10px' : '0px';
-        }
-        
-        scoreEl.innerText = p1s;
+        // Render score list
+        let html = '';
+        playerScores.forEach((score, idx) => {
+            const isCurrent = (idx + 1) === currentPlayer;
+            const color = playerColors[idx % playerColors.length];
+            html += `
+                <div style="display:flex; justify-content:space-between; align-items:center; 
+                            gap: 15px; padding: 4px 8px; border-radius:4px; 
+                            background: ${isCurrent ? 'rgba(255,204,0,0.2)' : 'transparent'};
+                            border-left: ${isCurrent ? '4px solid ' + color : 'none'}">
+                    <span style="color:${color}; font-weight:${isCurrent ? 'bold' : 'normal'}; 
+                                 white-space: nowrap; overflow: hidden; text-overflow: ellipsis; 
+                                 max-width: 100px; flex-shrink: 1;">${playerNames[idx]}</span>
+                    <span style="font-weight:bold; flex-shrink: 0;">${score}</span>
+                </div>
+            `;
+        });
+        playerScoresList.innerHTML = html;
     } else {
         pi.classList.add('hidden'); 
-        p2r.classList.add('hidden');
-        if (p1r) {
-            p1r.childNodes[0].textContent = "Điểm: ";
-            p1r.style.background = 'transparent';
-            p1r.style.borderLeft = 'none';
-            p1r.style.paddingLeft = '0';
-        }
-        scoreEl.innerText = p1s;
+        playerScoresList.innerHTML = `
+            <div style="font-size: 24px;">Điểm: <span style="color:#ffcc00">${playerScores[0]}</span></div>
+        `;
     }
 }
 
@@ -604,24 +628,62 @@ function gameLoop() {
                 updateUI();
 
                 const targetMarblesLeft = activeMarbles.filter(m => !m.isCue && m.active).length;
-                const allOutTurns = numPlayers === 1 ? (playerTurns[0] <= 0) : (playerTurns[0] <= 0 && playerTurns[1] <= 0);
-                
-                if (targetMarblesLeft === 0 || allOutTurns) {
-                    endGame();
-                } else {
-                    if (numPlayers === 2) {
-                        const nextPlayer = (currentPlayer === 1) ? 2 : 1;
-                        if (playerTurns[nextPlayer - 1] > 0) {
-                            currentPlayer = nextPlayer;
-                            showTurnNotify(`Đến lượt: P${currentPlayer}`);
-                        } else {
-                             showTurnNotify(`P${currentPlayer} bắn tiếp! (P${nextPlayer} hết lượt)`);
-                        }
-                    }
-                    gameState = 'IDLE';
+                const outOfTurns = playerTurns[currentPlayer - 1] <= 0;
+                const playerDone = (targetMarblesLeft === 0 || outOfTurns);
+
+                function ensureCueExists() {
                     const stillActiveCue = marbles.find(m => m.isCue && m.active);
-                    if (!stillActiveCue) resetCueMarble();
-                    updateUI();
+                    if (!stillActiveCue) {
+                        const distance = ARENA_RADIUS + MARBLE_RADIUS * 4.5;
+                        let startY = ARENA_Y + distance;
+                        if (startY > CANVAS_HEIGHT - (MAX_DRAG_DIST + MARBLE_RADIUS * 2)) {
+                            startY = CANVAS_HEIGHT - (MAX_DRAG_DIST + MARBLE_RADIUS * 2);
+                        }
+                        cueMarble = new Marble(ARENA_X, startY, '#fff', true);
+                        marbles.push(cueMarble);
+                        playerCues[currentPlayer - 1] = cueMarble;
+                    }
+                }
+
+                if (numPlayers === 1) {
+                    if (playerDone) {
+                        endGame();
+                    } else {
+                        gameState = 'IDLE';
+                        ensureCueExists();
+                        updateUI();
+                    }
+                } else {
+                    // Multi-player logic: 
+                    // Update current player's board state
+                    playerBoards[currentPlayer - 1] = marbles;
+                    playerCues[currentPlayer - 1] = cueMarble;
+
+                    // Find next player who still has turns AND marbles
+                    let nextPlayerIdx = currentPlayer; 
+                    let found = false;
+                    for (let i = 0; i < numPlayers; i++) {
+                        const pIdx = (nextPlayerIdx % numPlayers); 
+                        const pMarbles = playerBoards[pIdx];
+                        const pTargets = pMarbles.filter(m => !m.isCue && m.active).length;
+
+                        if (playerTurns[pIdx] > 0 && pTargets > 0) {
+                            currentPlayer = pIdx + 1;
+                            switchPlayerBoard(currentPlayer);
+                            showTurnNotify(`Lượt: ${playerNames[currentPlayer - 1]}`);
+                            found = true;
+                            break;
+                        }
+                        nextPlayerIdx++;
+                    }
+
+                    if (!found) {
+                        endGame();
+                    } else {
+                        gameState = 'IDLE';
+                        ensureCueExists();
+                        updateUI();
+                    }
                 }
             }
         }
@@ -677,11 +739,15 @@ function saveScore(s, label = '') {
 }
 function updateLeaderboardUI(list) {
     const html = list.map((e, i) => {
-        return `<li>
-            <span class="lb-idx">#${i+1}</span> 
-            <span class="lb-label" style="color:#ffcc00">${e.label ? '('+e.label+')' : ''}</span>
-            <span class="lb-score">${e.score}</span> 
-            <span class="lb-date">${e.date}</span>
+        return `<li style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+            <div style="display:flex; align-items:center; gap:8px; overflow:hidden;">
+                <span class="lb-idx" style="flex-shrink:0;">#${i+1}</span> 
+                <span class="lb-label" style="color:#ffcc00; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:120px;">${e.label ? '('+e.label+')' : ''}</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:10px; flex-shrink:0;">
+                <span class="lb-score" style="color:#ffcc00; font-weight:bold;">${e.score}</span> 
+                <span class="lb-date" style="color:#888; font-size:0.8em;">${e.date}</span>
+            </div>
         </li>`;
     }).join('');
     leaderboardList.innerHTML = html; 
@@ -708,54 +774,93 @@ function endGame() {
         
         scoresSummary.innerHTML = `<p style="font-size: 24px;">Tổng điểm: ${playerScores[0]}</p>`;
         updateLeaderboardUI(saveScore(playerScores[0]));
+        gameOverModal.classList.remove('hidden');
     } else {
-        // Trong chế độ 2P:
-        // Cộng điểm lượt dư cho CẢ HAI người chơi nếu thắng sớm (xóa hết bi)
-        let bonusText = "";
-        let bonus1 = 0, bonus2 = 0;
-        
-        if (allMarblesCleared) {
-            bonus1 = playerTurns[0] * 50;
-            bonus2 = playerTurns[1] * 50;
-            playerScores[0] += bonus1;
-            playerScores[1] += bonus2;
-            bonusText = `Thưởng: P1 +${bonus1}, P2 +${bonus2}`;
+        // Multi-player mode: Calculate bonus for each player
+        let bonusReports = [];
+        playerBoards.forEach((board, i) => {
+            const cleared = board.filter(m => !m.isCue && m.active).length === 0;
+            if (cleared) {
+                const bonus = playerTurns[i] * 50;
+                playerScores[i] += bonus;
+                if (bonus > 0) bonusReports.push(`${playerNames[i]} +${bonus}`);
+            }
+        });
+
+        // Store or update in masterResults
+        if (!isPlayoff) {
+            masterResults = playerNames.map((name, i) => ({
+                name: name,
+                color: playerColors[i % playerColors.length],
+                score: playerScores[i],
+                playoffScore: 0
+            }));
         } else {
-            bonusText = "Cả hai đều đã hết lượt bắn!";
+            // Update playoff scores for participants
+            playerNames.forEach((name, i) => {
+                const entry = masterResults.find(r => r.name === name);
+                if (entry) entry.playoffScore = playerScores[i];
+            });
         }
 
-        const p1 = playerScores[0];
-        const p2 = playerScores[1];
-        
-        if (p1 > p2) {
-            endTitleEl.innerText = "P1 CHIẾN THẮNG!";
-            endTitleEl.style.color = "#66ccff";
-        } else if (p2 > p1) {
-            endTitleEl.innerText = "P2 CHIẾN THẮNG!";
-            endTitleEl.style.color = "#ff8844";
+        if (bonusReports.length > 0) {
+            bonusInfoEl.innerText = "Thưởng lượt dư: " + bonusReports.join(", ");
         } else {
-            endTitleEl.innerText = "HÒA NHAU!";
-            endTitleEl.style.color = "#ffffff";
+            bonusInfoEl.innerText = "Không có thưởng lượt dư (chưa dọn sạch bi)";
         }
-        
-        bonusInfoEl.innerText = bonusText;
         bonusInfoEl.classList.remove('hidden');
-        
-        scoresSummary.innerHTML = `
-            <div style="display:flex; flex-direction:column; gap:10px; margin: 15px 0;">
-                <div style="display:flex; justify-content:space-around; font-size:24px;">
-                    <div style="color:#66ccff; text-align:center;">P1<br>${p1}</div>
-                    <div style="color:#ff8844; text-align:center;">P2<br>${p2}</div>
-                </div>
-            </div>
-        `;
 
-        saveScore(p1, 'P1');
-        const latestScores = saveScore(p2, 'P2');
-        updateLeaderboardUI(latestScores);
+        // Find winner based on CURRENT round's scores
+        let maxScore = -9999;
+        let winners = [];
+        playerScores.forEach((s, i) => {
+            if (s > maxScore) {
+                maxScore = s;
+                winners = [playerNames[i]];
+            } else if (s === maxScore) {
+                winners.push(playerNames[i]);
+            }
+        });
+
+        if (winners.length === 1) {
+            // WE HAVE A SINGLE CHAMPION
+            endTitleEl.innerText = isPlayoff ? `VÔ ĐỊCH: ${winners[0]}!` : `${winners[0]} CHIẾN THẮNG!`;
+            
+            // Highlight winner's color (find in masterResults for consistency)
+            const champEntry = masterResults.find(r => r.name === winners[0]);
+            endTitleEl.style.color = champEntry ? champEntry.color : "#ffcc00";
+            
+            // Render ALL original players in summary
+            let summaryHtml = '<div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px; margin: 15px 0;">';
+            masterResults.forEach((res) => {
+                const scoreDisplay = res.score + (res.playoffScore > 0 ? ` (${res.playoffScore})` : '');
+                summaryHtml += `
+                    <div style="color:${res.color}; font-size:18px; 
+                                display:flex; justify-content:space-between; gap:10px; overflow:hidden;">
+                        <span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${res.name}</span>
+                        <span style="font-weight:bold; flex-shrink:0;">${scoreDisplay}</span>
+                    </div>`;
+            });
+            summaryHtml += '</div>';
+            scoresSummary.innerHTML = summaryHtml;
+
+            // Save winner's FINAL score to leaderboard
+            saveScore(champEntry.score, champEntry.name);
+            updateLeaderboardUI(JSON.parse(localStorage.getItem(LEADERBOARD_KEY)) || []);
+            gameOverModal.classList.remove('hidden');
+        } else {
+            // TIE BREAKER!
+            const tiedWinnersNames = winners;
+            const tiedWinnersColors = winners.map(name => {
+                 const res = masterResults.find(r => r.name === name);
+                 return res ? res.color : '#fff';
+            });
+            
+            showTurnNotify("HÒA ĐIỂM! BẮT ĐẦU VÒNG PHỤ...");
+            startPlayoff(tiedWinnersNames, tiedWinnersColors);
+            return; 
+        }
     }
-    
-    gameOverModal.classList.remove('hidden');
 }
 
 // HÀM HỖ TRỢ ĐÓNG TẤT CẢ POPUP
@@ -765,13 +870,77 @@ function hideAllModals() {
     gameOverModal.classList.add('hidden');
 }
 
-document.getElementById('btn-1p').addEventListener('click', () => initGame(1));
-document.getElementById('btn-2p').addEventListener('click', () => initGame(2));
+document.getElementById('btn-1p').addEventListener('click', () => {
+    setupPlayerNames(1);
+});
+
+document.getElementById('btn-2p').addEventListener('click', () => {
+    // For 2P, we also allow custom names for consistency, or just start
+    setupPlayerNames(2);
+});
+
+btnMulti.addEventListener('click', () => {
+    modeSelection.classList.add('hidden');
+    playerCountSetup.classList.remove('hidden');
+});
+
+playerCountSlider.addEventListener('input', () => {
+    countDisplay.innerText = playerCountSlider.value;
+});
+
+btnNextToNames.addEventListener('click', () => {
+    setupPlayerNames(parseInt(playerCountSlider.value));
+});
+
+btnBackToMode.addEventListener('click', () => {
+    playerCountSetup.classList.add('hidden');
+    modeSelection.classList.remove('hidden');
+});
+
+btnBackToCount.addEventListener('click', () => {
+    playerNamesSetup.classList.add('hidden');
+    playerCountSetup.classList.remove('hidden');
+});
+
+function setupPlayerNames(count) {
+    playerCountSetup.classList.add('hidden');
+    modeSelection.classList.add('hidden');
+    playerNamesSetup.classList.remove('hidden');
+    
+    nameInputsContainer.innerHTML = '';
+    for (let i = 0; i < count; i++) {
+        const div = document.createElement('div');
+        div.style.marginBottom = '10px';
+        let defaultName = `Người chơi ${i + 1}`;
+        if (count === 1) defaultName = 'Bạn';
+        else if (count === 2) defaultName = `P${i + 1}`;
+        
+        div.innerHTML = `
+            <input type="text" class="player-name-input" placeholder="Tên người chơi ${i + 1}" value="${defaultName}" maxlength="15">
+        `;
+        nameInputsContainer.appendChild(div);
+    }
+}
+
+btnStartGame.addEventListener('click', () => {
+    isPlayoff = false;
+    masterResults = [];
+    const inputs = document.querySelectorAll('.player-name-input');
+    const names = Array.from(inputs).map((input, idx) => input.value.trim() || `P${idx + 1}`);
+    playerNamesSetup.classList.add('hidden');
+    // Reset standard colors
+    playerColors = ['#66ccff', '#ff8844', '#ffcc00', '#44ff44', '#ff44ff', '#44ffff', '#ff5555', '#aaff00', '#00ffaa', '#ffaaff'];
+    initGame(names.length, names);
+});
 
 restartBtn.addEventListener('click', () => { 
     hideAllModals();
+    isPlayoff = false;
     gameState = 'MENU'; 
     document.getElementById('mode-chooser').classList.remove('hidden'); 
+    modeSelection.classList.remove('hidden');
+    playerCountSetup.classList.add('hidden');
+    playerNamesSetup.classList.add('hidden');
 });
 
 rulesBtn.addEventListener('click', () => {

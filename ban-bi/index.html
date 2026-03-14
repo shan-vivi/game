@@ -14,9 +14,10 @@
 
             <!-- Score board -->
             <div id="score-board">
-                <p id="player-indicator" class="hidden" style="color:#ffcc00; font-size:clamp(13px,3vmin,20px); margin-bottom:6px;"></p>
-                <p>Điểm: <span id="score">0</span></p>
-                <p id="score-p2-row" class="hidden">P2: <span id="score-p2">0</span></p>
+                <p id="player-indicator" class="hidden" style="color:#ffcc00; font-size:clamp(13px,3vmin,20px); margin-bottom:10px; text-align:center; border-bottom:1px solid rgba(255,204,0,0.3); padding-bottom:5px;"></p>
+                <div id="player-scores-list" style="display:flex; flex-direction:column; gap:6px; margin-bottom:12px;">
+                    <!-- Dynamic score rows will be here -->
+                </div>
                 <p>Lượt: <span id="turns">10</span></p>
                 <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px;">
                     <button id="rules-btn" style="background:#66ccff;color:#000;">Luật Chơi</button>
@@ -26,11 +27,39 @@
 
             <!-- Mode chooser (shown before game starts) -->
             <div id="mode-chooser">
-                <h2>🎮 BẮN BI 🎮</h2>
-                <p>Chọn chế độ chơi</p>
-                <div class="mode-btns">
-                    <button id="btn-1p">👤 1 Người Chơi</button>
-                    <button id="btn-2p">👥 2 Người Chơi</button>
+                <div id="menu-content" class="menu-card">
+                    <h2 id="menu-title">🎮 BẮN BI 🎮</h2>
+                    
+                    <div id="mode-selection" class="mode-btns">
+                        <button id="btn-1p">👤 1 Người</button>
+                        <button id="btn-2p">👥 2 Người</button>
+                        <button id="btn-multi">🤝 Nhóm (3-10)</button>
+                    </div>
+
+                    <!-- Player count selection (hidden by default) -->
+                    <div id="player-count-setup" class="setup-panel hidden">
+                        <p class="setup-label">Chọn số lượng người chơi</p>
+                        <div class="slider-box">
+                            <span id="count-display" class="count-value">3</span>
+                            <input type="range" id="player-count-slider" min="3" max="10" value="3">
+                        </div>
+                        <div class="setup-actions">
+                            <button id="btn-next-to-names" class="btn-primary-large">TIẾP THEO ➔</button>
+                            <button id="btn-back-to-mode" class="btn-secondary">QUAY LẠI</button>
+                        </div>
+                    </div>
+
+                    <!-- Player names input (hidden by default) -->
+                    <div id="player-names-setup" class="setup-panel hidden">
+                        <h3 class="setup-title">NHẬP TÊN NGƯỜI CHƠI</h3>
+                        <div id="name-inputs-container" class="scroll-container">
+                            <!-- inputs will be injected here -->
+                        </div>
+                        <div class="setup-actions">
+                            <button id="btn-start-game" class="btn-primary-large">BẮT ĐẦU CHƠI!</button>
+                            <button id="btn-back-to-count" class="btn-secondary">QUAY LẠI</button>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -57,16 +86,16 @@
                 <div style="font-size:clamp(14px,3.5vmin,20px);line-height:1.5;">
                     <p style="margin-bottom:8px;"><b>Cách chơi:</b></p>
                     <ul style="margin-left:18px;list-style-type:square;margin-bottom:12px;">
-                        <li style="margin-bottom:6px;">Nhấn vào <b>Bi Cái</b> (viên trắng) và <b>kéo ngược lại</b> hướng muốn bắn để lấy đà.</li>
-                        <li style="margin-bottom:6px;">Thả tay để Bi Cái bắn vào các Bi Con đang nằm trong vòng tròn phấn.</li>
-                        <li style="margin-bottom:6px;">Bắn đẩy tất cả Bi Con ra ngoài vòng trong <b>10 lượt đạn</b>.</li>
-                        <li style="margin-bottom:6px;">Chế độ 2 người: lượt đổi xen kẽ sau mỗi lần bắn, người nhiều điểm hơn thắng.</li>
+                        <li style="margin-bottom:6px;">Nhấn vào <b>Bi Cái</b> (trắng) và <b>kéo ngược</b> để lấy đà bắn.</li>
+                        <li style="margin-bottom:6px;"><b>Chế độ Nhóm:</b> Mỗi người có <b>Sân Riêng</b>, lượt bắn đổi xen kẽ.</li>
+                        <li style="margin-bottom:6px;">Dọn sạch bi trên sân của mình để được cộng điểm thưởng.</li>
+                        <li style="margin-bottom:6px;"><b>Luật Phụ:</b> Nếu hòa điểm cao nhất, sẽ có <b>Vòng Đấu Phụ</b> đến khi tìm ra người thắng duy nhất.</li>
                     </ul>
                     <p style="margin-bottom:8px;color:#ffcc00;"><b>Cách tính điểm:</b></p>
                     <ul style="margin-left:18px;list-style-type:square;margin-bottom:12px;">
-                        <li style="margin-bottom:6px;color:#44ff44;"><b>+100 điểm:</b> Mỗi Bi Con bị bắn văng ra ngoài vòng.</li>
-                        <li style="margin-bottom:6px;color:#ff4444;"><b>-50 điểm:</b> Nếu Bi Cái cũng trượt ra ngoài sau cú bắn.</li>
-                        <li style="margin-bottom:6px;color:#44ff44;"><b>+50 điểm/lượt:</b> Thưởng cho mỗi lượt dư khi thắng sớm.</li>
+                        <li style="margin-bottom:6px;color:#44ff44;"><b>+100 đ:</b> Mỗi Bi Con bị bắn văng ra ngoài.</li>
+                        <li style="margin-bottom:6px;color:#ff4444;"><b>-50 đ:</b> Nếu Bi Cái văng ra ngoài vòng.</li>
+                        <li style="margin-bottom:6px;color:#44ff44;"><b>+50 đ/lượt:</b> Thưởng lượt dư (chỉ khi dọn sạch sân).</li>
                     </ul>
                 </div>
                 <div style="text-align:center;margin-top:16px;">
