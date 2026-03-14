@@ -32,8 +32,38 @@
                     
                     <div id="mode-selection" class="mode-btns">
                         <button id="btn-1p">👤 1 Người</button>
-                        <button id="btn-2p">👥 2 Người</button>
+                        <button id="btn-online" style="background: linear-gradient(135deg, #00c6ff, #0072ff);">🌐 Chơi Online</button>
+                        <button id="btn-2p">👥 2 Người (Offline)</button>
                         <button id="btn-multi">🤝 Nhóm (3-10)</button>
+                    </div>
+
+                    <!-- Online room setup (new) -->
+                    <div id="online-setup" class="setup-panel hidden">
+                        <h3 class="setup-title">CHẾ ĐỘ ONLINE</h3>
+                        <div class="online-actions" style="display:flex; flex-direction:column; gap:15px;">
+                            <button id="btn-create-room" class="btn-primary-large" style="background:#00c6ff; box-shadow: 0 5px 0 #0081a7;">TẠO PHÒNG MỚI</button>
+                            <p style="color:#aaa;">— HOẶC —</p>
+                            <div style="display:flex; gap:10px;">
+                                <input type="text" id="room-id-input" placeholder="Nhập mã phòng..." maxlength="6" style="flex:1; padding:12px; font-family:'VT323'; font-size:20px; background:#222; border:2px solid #00c6ff; color:#fff; border-radius:8px; text-align:center;">
+                                <button id="btn-join-room" class="btn-primary-large" style="padding:10px 20px; font-size:20px; background:#44ff44; box-shadow: 0 5px 0 #228822;">VÀO</button>
+                            </div>
+                        </div>
+                        <button id="btn-back-from-online" class="btn-secondary" style="margin-top:20px;">QUAY LẠI</button>
+                    </div>
+
+                    <!-- Online Lobby panel (new) -->
+                    <div id="online-lobby" class="setup-panel hidden">
+                        <h3 class="setup-title">PHÒNG CHỜ</h3>
+                        <p style="color:#ffcc00; font-size:24px;">MÃ PHÒNG: <span id="lobby-room-id" style="font-weight:bold; letter-spacing:2px;">----</span></p>
+                        <div id="lobby-players-list" class="scroll-container" style="min-height:100px; margin:15px 0;">
+                            <!-- Players will appear here -->
+                        </div>
+                        <p id="lobby-status" style="color:#aaa; font-style:italic;">Đang chờ người chơi khác...</p>
+                        <div class="setup-actions">
+                            <button id="btn-toggle-ready" class="btn-primary-large" style="background:#ffcc00; color:#000; box-shadow:0 5px 0 #cc9900;">SẴN SÀNG</button>
+                            <button id="btn-start-online-game" class="btn-primary-large hidden" style="background:#44ff44; opacity: 0.5; filter: grayscale(1);" disabled>BẮT ĐẦU NGAY!</button>
+                            <button id="btn-leave-lobby" class="btn-secondary">THOÁT PHÒNG</button>
+                        </div>
                     </div>
 
                     <!-- Player count selection (hidden by default) -->
@@ -105,6 +135,6 @@
 
         </div>
     </div>
-    <script src="script.js"></script>
+    <script type="module" src="/main.js"></script>
 </body>
 </html>

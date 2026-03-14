@@ -1,3 +1,12 @@
+import './style.css';
+import { io } from 'socket.io-client';
+
+const socket = io('http://localhost:4000'); // Kết nối tới server local
+let myPlayerId = null;
+let currentRoom = null;
+let isOnlineMode = false;
+let remoteAimingData = { active: false, x: 0, y: 0 }; // Dữ liệu ngắm của đối thủ
+
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 const gameContainer = document.getElementById('game-container');
@@ -31,6 +40,18 @@ const btnBackToCount = document.getElementById('btn-back-to-count');
 const nameInputsContainer = document.getElementById('name-inputs-container');
 const playerScoresList = document.getElementById('player-scores-list');
 const btnMulti = document.getElementById('btn-multi');
+const btnOnline = document.getElementById('btn-online');
+const onlineSetup = document.getElementById('online-setup');
+const btnBackFromOnline = document.getElementById('btn-back-from-online');
+const btnCreateRoom = document.getElementById('btn-create-room');
+const btnJoinRoom = document.getElementById('btn-join-room');
+const roomIdInput = document.getElementById('room-id-input');
+const onlineLobby = document.getElementById('online-lobby');
+const lobbyRoomIdDisplay = document.getElementById('lobby-room-id');
+const lobbyPlayersList = document.getElementById('lobby-players-list');
+const btnStartOnlineGame = document.getElementById('btn-start-online-game');
+const btnLeaveLobby = document.getElementById('btn-leave-lobby');
+const lobbyStatus = document.getElementById('lobby-status');
 
 // ============================================================
 // DYNAMIC DIMENSIONS — calculated from actual viewport
@@ -112,8 +133,24 @@ class Vector {
     dist(v) { return this.sub(v).mag(); }
 }
 
+// HELPER: Chuẩn hóa tọa độ để đồng bộ giữa các màn hình khác nhau
+function getNormalized(v) {
+    if (!v) return { nx: 0, ny: 0 };
+    return {
+        nx: (v.x - ARENA_X) / ARENA_RADIUS,
+        ny: (v.y - ARENA_Y) / ARENA_RADIUS
+    };
+}
+function fromNormalized(n) {
+    return new Vector(
+        ARENA_X + n.nx * ARENA_RADIUS,
+        ARENA_Y + n.ny * ARENA_RADIUS
+    );
+}
+
 class Marble {
-    constructor(x, y, color, isCue = false) {
+    constructor(id, x, y, color, isCue = false) {
+        this.id = id; // Unique ID for sync
         this.pos = new Vector(x, y);
         this.vel = new Vector(0, 0);
         this.radius = MARBLE_RADIUS;
@@ -182,28 +219,27 @@ function initGame(players = 1, names = []) {
         let currentMarbles = [];
         calcDimensions();
         
-        // Use 1P layout for EVERY player (7 marbles total)
+        // Use 1P layout (7 marbles total)
         const marbleColors = ['#ff4444', '#44ff44', '#4444ff', '#ffff44', '#ff44ff', '#44ffff'];
-        currentMarbles.push(new Marble(ARENA_X, ARENA_Y, marbleColors[0]));
+        currentMarbles.push(new Marble(`${p}_target_0`, ARENA_X, ARENA_Y, marbleColors[0]));
         
-        // Standard 6 bi con ring
         const ringRadius = MARBLE_RADIUS * 2.5;
         for (let i = 0; i < 6; i++) {
             const angle = (Math.PI / 3) * i;
             currentMarbles.push(new Marble(
+                `${p}_target_${i+1}`,
                 ARENA_X + Math.cos(angle) * ringRadius,
                 ARENA_Y + Math.sin(angle) * ringRadius,
                 marbleColors[(i % 5) + 1]
             ));
         }
 
-        // Setup Cue Marble
         const distance = ARENA_RADIUS + MARBLE_RADIUS * 4.5;
         let startY = ARENA_Y + distance;
         const minBottomMargin = MAX_DRAG_DIST + MARBLE_RADIUS * 2;
         if (startY > CANVAS_HEIGHT - minBottomMargin) startY = CANVAS_HEIGHT - minBottomMargin;
         
-        const cue = new Marble(ARENA_X, startY, '#fff', true);
+        const cue = new Marble(`${p}_cue`, ARENA_X, startY, '#fff', true);
         currentMarbles.push(cue);
         
         playerBoards[p] = currentMarbles;
@@ -331,28 +367,39 @@ function drawArena() {
 }
 
 function drawAimLine() {
-    if ((gameState !== 'AIMING' && gameState !== 'IDLE') || !cueMarble) return;
-    
-    // Tính toán hướng và lực kéo dựa trên cursor
-    let dragDiff = new Vector(mouseX - cueMarble.pos.x, mouseY - cueMarble.pos.y);
-    let currentDist = dragDiff.mag();
-    let pullDist = (gameState === 'AIMING') ? Math.min(MAX_DRAG_DIST, currentDist) : 0;
+    if (gameState !== 'IDLE' && gameState !== 'AIMING') return;
+    if (!cueMarble) return;
 
-    if (gameState === 'AIMING' && pullDist > 5) {
+    const isMyTurn = !isOnlineMode || (currentPlayer - 1) === window.mySlotIndex;
+    
+    // Nếu là Online và không phải lượt mình, và đối thủ đang không ngắm -> Không vẽ gì
+    if (isOnlineMode && !isMyTurn && !remoteAimingData.active) return;
+
+    // Chọn dữ liệu tọa độ (từ mình hoặc từ đối thủ qua socket - đã giải mã chuẩn hóa)
+    const targetX = isMyTurn ? mouseX : (ARENA_X + remoteAimingData.nx * ARENA_RADIUS);
+    const targetY = isMyTurn ? mouseY : (ARENA_Y + remoteAimingData.ny * ARENA_RADIUS);
+    const activeAiming = isMyTurn ? (gameState === 'AIMING') : remoteAimingData.active;
+
+    // Tính toán hướng và lực kéo
+    let dragDiff = new Vector(targetX - cueMarble.pos.x, targetY - cueMarble.pos.y);
+    let currentDist = dragDiff.mag();
+    let pullDist = activeAiming ? Math.min(MAX_DRAG_DIST, currentDist) : 0;
+
+    if (activeAiming && pullDist > 5) {
         // Đường dự báo (trajectory)
         let aimVector = dragDiff.mult(-1).normalize().mult(pullDist * 2);
         ctx.beginPath();
         ctx.moveTo(cueMarble.pos.x, cueMarble.pos.y);
         ctx.lineTo(cueMarble.pos.x + aimVector.x, cueMarble.pos.y + aimVector.y);
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+        ctx.strokeStyle = isMyTurn ? 'rgba(255, 255, 255, 0.8)' : 'rgba(255, 204, 0, 0.5)';
         ctx.lineWidth = 3;
         ctx.setLineDash([8, 8]);
         ctx.stroke();
         ctx.setLineDash([]);
     }
     
-    // Vẽ tay mèo chầu chực (IDLE) hoặc đang kéo (AIMING)
-    drawCatPaws(mouseX, mouseY, cueMarble.pos.x, cueMarble.pos.y, cueMarble.radius, pullDist);
+    // Vẽ tay mèo
+    drawCatPaws(targetX, targetY, cueMarble.pos.x, cueMarble.pos.y, cueMarble.radius, pullDist);
 }
 
 function drawCatPaws(mx, my, cx, cy, radius, pullDist) {
@@ -515,7 +562,8 @@ function checkArenaBounds() {
 }
 
 function updateUI() {
-    turnsEl.innerText = playerTurns[currentPlayer - 1];
+    // Nếu hết game, hiển thị lượt là 0
+    turnsEl.innerText = gameState === 'GAMEOVER' ? '0' : playerTurns[currentPlayer - 1];
     const pi = document.getElementById('player-indicator');
     
     if (numPlayers > 1) {
@@ -600,10 +648,27 @@ function gameLoop() {
                 if (m.vel.mag() > 0.1) moving = true; 
             }
             
-            // Nếu là bi cái và đang ở trạng thái ngắm/chờ, SKIP vì drawAimLine sẽ vẽ nó (để bi co giãn theo tay)
-            if ((gameState === 'AIMING' || gameState === 'IDLE') && m.isCue) continue;
-            
+            // SKIP drawing cue marble here if it's being drawn by drawCatPaws (IDLE/AIMING)
+            // This fixes the "double cue marble" bug.
+            if ((gameState === 'IDLE' || gameState === 'AIMING') && m.isCue) continue;
+
             m.draw(ctx);
+        }
+
+        // PHÁT SÓNG VẬT LÝ: Gửi vị trí bi mượt mà theo ID
+        if (isOnlineMode && gameState === 'MOVING' && moving && (currentPlayer - 1) === window.mySlotIndex) {
+            const data = marbles.map(m => ({
+                id: m.id,
+                ...getNormalized(m.pos),
+                nvx: m.vel.x / ARENA_RADIUS,
+                nvy: m.vel.y / ARENA_RADIUS,
+                active: m.active
+            }));
+            socket.emit('update-marbles', { 
+                roomId: currentRoom, 
+                marbles: data,
+                currentScore: playerScores[currentPlayer - 1] // Gửi kèm điểm hiện tại
+            });
         }
 
         if (gameState === 'MOVING') {
@@ -611,6 +676,7 @@ function gameLoop() {
             checkArenaBounds();
             
             if (!moving) {
+                const oldPlayerIdx = currentPlayer; // Lưu lại để biết ai vừa bắn
                 const activeMarbles = marbles.filter(m => m.active);
                 
                 playerTurns[currentPlayer - 1]--;
@@ -639,7 +705,8 @@ function gameLoop() {
                         if (startY > CANVAS_HEIGHT - (MAX_DRAG_DIST + MARBLE_RADIUS * 2)) {
                             startY = CANVAS_HEIGHT - (MAX_DRAG_DIST + MARBLE_RADIUS * 2);
                         }
-                        cueMarble = new Marble(ARENA_X, startY, '#fff', true);
+                        const cueId = `${currentPlayer-1}_cue`;
+                        cueMarble = new Marble(cueId, ARENA_X, startY, '#fff', true);
                         marbles.push(cueMarble);
                         playerCues[currentPlayer - 1] = cueMarble;
                     }
@@ -654,23 +721,22 @@ function gameLoop() {
                         updateUI();
                     }
                 } else {
-                    // Multi-player logic: 
-                    // Update current player's board state
+                    // Cập nhật board state cục bộ
                     playerBoards[currentPlayer - 1] = marbles;
                     playerCues[currentPlayer - 1] = cueMarble;
 
-                    // Find next player who still has turns AND marbles
+                    // Tìm người chơi tiếp theo
                     let nextPlayerIdx = currentPlayer; 
                     let found = false;
                     for (let i = 0; i < numPlayers; i++) {
                         const pIdx = (nextPlayerIdx % numPlayers); 
                         const pMarbles = playerBoards[pIdx];
                         const pTargets = pMarbles.filter(m => !m.isCue && m.active).length;
+                        const pHasTurns = playerTurns[pIdx] > 0;
 
-                        if (playerTurns[pIdx] > 0 && pTargets > 0) {
+                        if (pHasTurns && pTargets > 0) {
                             currentPlayer = pIdx + 1;
                             switchPlayerBoard(currentPlayer);
-                            showTurnNotify(`Lượt: ${playerNames[currentPlayer - 1]}`);
                             found = true;
                             break;
                         }
@@ -685,6 +751,26 @@ function gameLoop() {
                         updateUI();
                     }
                 }
+
+                // GỬI ĐỒNG BỘ: Chỉ người vừa bắn mới được gửi kết quả chuẩn đi
+                if (isOnlineMode && (oldPlayerIdx - 1) === window.mySlotIndex) {
+                    const marblesState = marbles.map(m => ({
+                        nx: (m.pos.x - ARENA_X) / ARENA_RADIUS,
+                        ny: (m.pos.y - ARENA_Y) / ARENA_RADIUS,
+                        active: m.active,
+                        isCue: m.isCue,
+                        color: m.color
+                    }));
+
+                    socket.emit('game-state-update', {
+                        roomId: currentRoom,
+                        scores: playerScores,
+                        turns: playerTurns,
+                        currentPlayer: currentPlayer,
+                        gameState: gameState, // Sync even if it's GAMEOVER
+                        marbles: marblesState
+                    });
+                }
             }
         }
         
@@ -696,6 +782,12 @@ function gameLoop() {
 
 function handlePointerDown(cx, cy) {
     if (gameState !== 'IDLE' || !cueMarble) return;
+
+    // ONLINE LOCK: Chỉ cho phép bắn nếu đến lượt mình
+    if (isOnlineMode && (currentPlayer - 1) !== window.mySlotIndex) {
+        return; 
+    }
+
     const rect = canvas.getBoundingClientRect();
     const x = (cx - rect.left) * (canvas.width/rect.width);
     const y = (cy - rect.top) * (canvas.height/rect.height);
@@ -707,13 +799,45 @@ function handlePointerMove(cx, cy) {
     const rect = canvas.getBoundingClientRect();
     mouseX = (cx - rect.left) * (canvas.width/rect.width);
     mouseY = (cy - rect.top) * (canvas.height/rect.height);
+
+    // Gửi dữ liệu ngắm đã chuẩn hóa
+    if (isOnlineMode && (currentPlayer - 1) === window.mySlotIndex && (gameState === 'IDLE' || gameState === 'AIMING')) {
+        const norm = getNormalized(new Vector(mouseX, mouseY));
+        socket.emit('aim', {
+            roomId: currentRoom,
+            nx: norm.nx,
+            ny: norm.ny,
+            active: isDragging
+        });
+    }
 }
 function handlePointerUp() {
     if (!isDragging || gameState !== 'AIMING') return;
     isDragging = false;
+    
+    // Reset ngắm online
+    if (isOnlineMode) {
+        socket.emit('aim', { roomId: currentRoom, active: false });
+    }
+
     let diff = new Vector(mouseX - cueMarble.pos.x, mouseY - cueMarble.pos.y);
     if (diff.mag() > MAX_DRAG_DIST) diff = diff.normalize().mult(MAX_DRAG_DIST);
-    if (diff.mag() > 5) { cueMarble.vel = diff.mult(-POWER_MULTIPLIER); gameState = 'MOVING'; }
+    if (diff.mag() > 5) { 
+        cueMarble.vel = diff.mult(-POWER_MULTIPLIER); 
+        gameState = 'MOVING'; 
+
+        // Gửi thông tin bắn (Lực chuẩn hóa theo ARENA_RADIUS)
+        if (isOnlineMode) {
+            socket.emit('shoot', {
+                roomId: currentRoom,
+                forceNX: (cueMarble.vel.x / ARENA_RADIUS),
+                forceNY: (cueMarble.vel.y / ARENA_RADIUS),
+                startNX: (cueMarble.pos.x - ARENA_X) / ARENA_RADIUS,
+                startNY: (cueMarble.pos.y - ARENA_Y) / ARENA_RADIUS,
+                playerId: myPlayerId
+            });
+        }
+    }
     else gameState = 'IDLE';
 }
 
@@ -725,36 +849,62 @@ canvas.addEventListener('touchmove', e => { e.preventDefault(); const t = e.touc
 canvas.addEventListener('touchend', handlePointerUp);
 
 const LEADERBOARD_KEY = 'banBiLeaderboard';
-function saveScore(s, label = '') {
+function saveScores(results) {
     let list = JSON.parse(localStorage.getItem(LEADERBOARD_KEY)) || [];
-    list.push({
-        score: s, 
-        label: label,
-        date: new Date().toLocaleDateString()
+    const now = Date.now();
+    
+    // kết hợp các kết quả mới vào danh sách cũ
+    results.forEach(res => {
+        // Kiểm tra trùng lặp (nếu cùng tên, cùng điểm và lưu cách nhau dưới 2 giây -> coi là 1 ván)
+        const isDuplicate = list.some(item => 
+            item.label === res.name && 
+            item.score === res.score && 
+            (now - (item.timestamp || 0)) < 2000
+        );
+
+        if (!isDuplicate) {
+            list.push({
+                score: res.score,
+                label: res.name,
+                date: new Date().toLocaleDateString(),
+                timestamp: now
+            });
+        }
     });
+
+    // Sắp xếp giảm dần theo điểm
     list.sort((a, b) => b.score - a.score);
+    // Chỉ lấy Top 5
     list = list.slice(0, 5);
+    
     localStorage.setItem(LEADERBOARD_KEY, JSON.stringify(list));
     return list;
 }
 function updateLeaderboardUI(list) {
     const html = list.map((e, i) => {
-        return `<li style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+        let medal = '';
+        if (i === 0) medal = '🥇 ';
+        else if (i === 1) medal = '🥈 ';
+        else if (i === 2) medal = '🥉 ';
+        else medal = `#${i+1} `;
+
+        return `<li style="display:flex; justify-content:space-between; align-items:center; gap:10px; padding:6px 10px; background:rgba(255,255,255,0.05); border-radius:6px; margin-bottom:5px;">
             <div style="display:flex; align-items:center; gap:8px; overflow:hidden;">
-                <span class="lb-idx" style="flex-shrink:0;">#${i+1}</span> 
-                <span class="lb-label" style="color:#ffcc00; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:120px;">${e.label ? '('+e.label+')' : ''}</span>
+                <span style="color:#ffcc00; font-weight:bold; flex-shrink:0;">${medal}</span> 
+                <span style="color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:140px;">${e.label || 'Vô danh'}</span>
             </div>
             <div style="display:flex; align-items:center; gap:10px; flex-shrink:0;">
-                <span class="lb-score" style="color:#ffcc00; font-weight:bold;">${e.score}</span> 
-                <span class="lb-date" style="color:#888; font-size:0.8em;">${e.date}</span>
+                <span style="color:#44ff44; font-weight:bold;">${e.score} pts</span> 
             </div>
         </li>`;
     }).join('');
-    leaderboardList.innerHTML = html; 
-    standaloneLeaderboardList.innerHTML = html;
+    
+    const emptyMsg = '<p style="text-align:center; color:#888;">Chưa có dữ liệu</p>';
+    leaderboardList.innerHTML = list.length ? html : emptyMsg; 
+    standaloneLeaderboardList.innerHTML = list.length ? html : emptyMsg;
 }
 
-function endGame() {
+function endGame(skipBonus = false) {
     gameState = 'GAMEOVER';
     hideAllModals(); 
     
@@ -764,7 +914,9 @@ function endGame() {
     if (numPlayers === 1) {
         const win = allMarblesCleared;
         const bonus = win ? playerTurns[0] * 50 : 0;
-        playerScores[0] += bonus;
+        
+        // Chỉ cộng vào biến score nếu chưa được cộng (máy Master)
+        if (!skipBonus && bonus > 0) playerScores[0] += bonus;
         
         endTitleEl.innerText = win ? "CHIẾN THẮNG!" : "HẾT LƯỢT!";
         endTitleEl.style.color = win ? "#44ff44" : "#ff4444";
@@ -772,8 +924,10 @@ function endGame() {
         bonusInfoEl.innerText = win ? `Thưởng lượt dư: +${bonus}` : "";
         bonusInfoEl.classList.toggle('hidden', !win);
         
-        scoresSummary.innerHTML = `<p style="font-size: 24px;">Tổng điểm: ${playerScores[0]}</p>`;
-        updateLeaderboardUI(saveScore(playerScores[0]));
+        scoresSummary.innerHTML = `<p style="font-size: 28px; color:#ffcc00; text-align:center;">TỔNG ĐIỂM: ${playerScores[0]}</p>`;
+        
+        const finalResults = [{ name: playerNames[0] || 'Bạn', score: playerScores[0] }];
+        updateLeaderboardUI(saveScores(finalResults));
         gameOverModal.classList.remove('hidden');
     } else {
         // Multi-player mode: Calculate bonus for each player
@@ -782,8 +936,11 @@ function endGame() {
             const cleared = board.filter(m => !m.isCue && m.active).length === 0;
             if (cleared) {
                 const bonus = playerTurns[i] * 50;
-                playerScores[i] += bonus;
-                if (bonus > 0) bonusReports.push(`${playerNames[i]} +${bonus}`);
+                if (bonus > 0) {
+                    // Chỉ cộng toán học nếu là máy Master (skipBonus=false)
+                    if (!skipBonus) playerScores[i] += bonus;
+                    bonusReports.push(`${playerNames[i]} +${bonus}`);
+                }
             }
         });
 
@@ -826,30 +983,36 @@ function endGame() {
             // WE HAVE A SINGLE CHAMPION
             endTitleEl.innerText = isPlayoff ? `VÔ ĐỊCH: ${winners[0]}!` : `${winners[0]} CHIẾN THẮNG!`;
             
-            // Highlight winner's color (find in masterResults for consistency)
             const champEntry = masterResults.find(r => r.name === winners[0]);
             endTitleEl.style.color = champEntry ? champEntry.color : "#ffcc00";
             
-            // Render ALL original players in summary
-            let summaryHtml = '<div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px; margin: 15px 0;">';
-            masterResults.forEach((res) => {
-                const scoreDisplay = res.score + (res.playoffScore > 0 ? ` (${res.playoffScore})` : '');
+            // Render ALL original players in summary with improved table
+            let summaryHtml = '<div style="display:flex; flex-direction:column; gap:10px; margin: 20px 0; background:rgba(0,0,0,0.2); padding:15px; border-radius:12px;">';
+            masterResults.sort((a,b) => b.score - a.score).forEach((res) => {
+                // Hiển thị điểm playoff nếu có tham gia (kể cả 0 điểm)
+                const inPlayoff = isPlayoff || winners.length > 1; // context logic
+                const hasPlayoffScore = isPlayoff && res.playoffScore !== undefined;
+                const scoreDisplay = `<span>${res.score}</span>` + 
+                    (res.playoffScore > 0 || (isPlayoff && res.playoffScore === 0) ? 
+                     `<span style="color:#aaa; font-size:0.8em; margin-left:8px;">(Phụ: ${res.playoffScore})</span>` : '');
+
                 summaryHtml += `
-                    <div style="color:${res.color}; font-size:18px; 
-                                display:flex; justify-content:space-between; gap:10px; overflow:hidden;">
-                        <span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${res.name}</span>
-                        <span style="font-weight:bold; flex-shrink:0;">${scoreDisplay}</span>
+                    <div style="color:${res.color}; font-size:20px; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:5px;">
+                        <span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:180px;">${res.name}</span>
+                        <div style="font-weight:bold;">${scoreDisplay}</div>
                     </div>`;
             });
             summaryHtml += '</div>';
             scoresSummary.innerHTML = summaryHtml;
 
-            // Save winner's FINAL score to leaderboard
-            saveScore(champEntry.score, champEntry.name);
-            updateLeaderboardUI(JSON.parse(localStorage.getItem(LEADERBOARD_KEY)) || []);
+            // Lưu vào bảng xếp hạng: Mọi trình duyệt đều lưu để cập nhật kỷ lục cá nhân
+            const finalResultsToSave = masterResults.map(r => ({ name: r.name, score: r.score }));
+            updateLeaderboardUI(saveScores(finalResultsToSave));
+            
             gameOverModal.classList.remove('hidden');
         } else {
-            // TIE BREAKER!
+            // TIE BREAKER! ... (existing logic)
+            // (Không thay đổi phần này)
             const tiedWinnersNames = winners;
             const tiedWinnersColors = winners.map(name => {
                  const res = masterResults.find(r => r.name === name);
@@ -861,6 +1024,7 @@ function endGame() {
             return; 
         }
     }
+    updateUI(); // Cập nhật lại thanh điểm góc trái và lượt (phải gọi sau khi cộng bonus)
 }
 
 // HÀM HỖ TRỢ ĐÓNG TẤT CẢ POPUP
@@ -901,6 +1065,248 @@ btnBackToCount.addEventListener('click', () => {
     playerNamesSetup.classList.add('hidden');
     playerCountSetup.classList.remove('hidden');
 });
+
+// ONLINE MODE HANDLERS
+btnOnline.addEventListener('click', () => {
+    modeSelection.classList.add('hidden');
+    onlineSetup.classList.remove('hidden');
+    isOnlineMode = true;
+});
+
+btnBackFromOnline.addEventListener('click', () => {
+    onlineSetup.classList.add('hidden');
+    modeSelection.classList.remove('hidden');
+    isOnlineMode = false;
+});
+
+btnCreateRoom.addEventListener('click', () => {
+    const randomRoom = Math.floor(1000 + Math.random() * 9000).toString();
+    socket.emit('create-room', { roomId: randomRoom, name: "Người chơi 1" });
+    showTurnNotify("ĐANG TẠO PHÒNG...");
+});
+
+btnJoinRoom.addEventListener('click', () => {
+    const roomId = roomIdInput.value.trim();
+    if (!roomId) return alert("Vui lòng nhập mã phòng!");
+    socket.emit('join-room', { roomId, name: "Người chơi mới" });
+});
+
+roomIdInput.addEventListener('keyup', (e) => {
+    if (e.key === 'Enter') {
+        btnJoinRoom.click();
+    }
+});
+
+socket.on('error', (msg) => {
+    alert("❌ LỖI: " + msg);
+});
+
+socket.on('room-joined', (data) => {
+    currentRoom = data.roomId;
+    myPlayerId = data.playerId;
+    
+    // Chuyển từ màn hình Setup sang màn hình Lobby
+    onlineSetup.classList.add('hidden');
+    onlineLobby.classList.remove('hidden');
+    lobbyRoomIdDisplay.textContent = currentRoom;
+    
+    showTurnNotify(`VÀO PHÒNG: ${currentRoom}`);
+});
+
+socket.on('player-list-update', (players) => {
+    console.log("Cập nhật danh sách người chơi:", players);
+    lobbyPlayersList.innerHTML = '';
+    
+    // Đảm bảo myPlayerId khớp với socket.id hiện tại
+    if (socket.id) myPlayerId = socket.id;
+
+    let allReady = players.length >= 2;
+    
+    players.forEach(p => {
+        const div = document.createElement('div');
+        div.style.padding = '12px';
+        div.style.background = 'rgba(255,255,255,0.08)';
+        div.style.borderRadius = '10px';
+        div.style.marginBottom = '8px';
+        div.style.display = 'flex';
+        div.style.justifyContent = 'space-between';
+        div.style.alignItems = 'center';
+        div.style.border = '1px solid rgba(255,255,255,0.1)';
+        
+        const isMe = p.id === myPlayerId || p.id === socket.id;
+        const readyText = p.ready ? '<span style="color:#44ff44; font-weight:bold;">SẴN SÀNG ✓</span>' : '<span style="color:#ff4444;">ĐANG ĐỢI...</span>';
+        
+        div.innerHTML = `
+            <span style="font-size:18px;">👤 ${p.name} ${isMe ? '<span style="color:#44ff44; font-size:0.8em; font-weight:bold;">(BẠN)</span>' : ''}</span>
+            <div style="font-size:16px;">${readyText}</div>
+        `;
+        lobbyPlayersList.appendChild(div);
+        
+        if (!p.ready) allReady = false;
+    });
+
+    const isOwner = players.length > 0 && (players[0].id === myPlayerId || players[0].id === socket.id);
+    const btnReady = document.getElementById('btn-toggle-ready');
+    const me = players.find(p => p.id === myPlayerId || p.id === socket.id);
+
+    if (isOwner) {
+        btnStartOnlineGame.classList.remove('hidden');
+        btnReady.classList.add('hidden');
+        
+        if (allReady) {
+            btnStartOnlineGame.disabled = false;
+            btnStartOnlineGame.style.opacity = '1';
+            btnStartOnlineGame.style.filter = 'none';
+            btnStartOnlineGame.style.cursor = 'pointer';
+            lobbyStatus.textContent = "Bạn có thể bắt đầu trận đấu!";
+            lobbyStatus.style.color = "#44ff44";
+        } else {
+            btnStartOnlineGame.disabled = true;
+            btnStartOnlineGame.style.opacity = '0.5';
+            btnStartOnlineGame.style.filter = 'grayscale(1)';
+            btnStartOnlineGame.style.cursor = 'not-allowed';
+            lobbyStatus.textContent = players.length < 2 ? "Chờ người chơi khác tham gia..." : "Chờ tất cả sẵn sàng...";
+            lobbyStatus.style.color = "#aaa";
+        }
+    } else {
+        btnStartOnlineGame.classList.add('hidden');
+        btnReady.classList.remove('hidden');
+        
+        if (me) {
+            btnReady.textContent = me.ready ? "HỦY SẴN SÀNG" : "SẴN SÀNG!";
+            btnReady.style.background = me.ready ? "#ff4444" : "#ffcc00";
+            btnReady.style.boxShadow = me.ready ? "0 5px 0 #990000" : "0 5px 0 #cc9900";
+            lobbyStatus.textContent = me.ready ? (allReady ? "Sắp bắt đầu..." : "Đã sẵn sàng, chờ mọi người...") : "Bạn chưa sẵn sàng!";
+            lobbyStatus.style.color = me.ready ? "#44ff44" : "#ff4444";
+        }
+    }
+});
+
+// Listener cho nút sẵn sàng - dùng delegate hoặc attach 1 lần duy nhất
+if (!window._readyListenerAttached) {
+    document.getElementById('btn-toggle-ready').addEventListener('click', () => {
+        if (currentRoom) {
+            console.log("Emit toggle-ready cho phòng:", currentRoom);
+            socket.emit('toggle-ready', { roomId: currentRoom });
+        }
+    });
+    window._readyListenerAttached = true;
+}
+
+btnLeaveLobby.addEventListener('click', () => {
+    location.reload(); // Cách nhanh nhất để reset socket và state
+});
+
+btnStartOnlineGame.addEventListener('click', () => {
+    socket.emit('start-game', { roomId: currentRoom });
+});
+
+socket.on('init-online-game', (data) => {
+    isOnlineMode = true;
+    onlineLobby.classList.add('hidden');
+    document.body.style.overflow = 'hidden'; // Tránh scroll
+
+    document.getElementById('mode-chooser').classList.add('hidden');
+    
+    const names = data.players.map(p => p.name);
+    initGame(names.length, names);
+    
+    for (let p = 0; p < numPlayers; p++) {
+        const boardMarbles = data.initialMarbles.filter(m => Number(m.pid) === p);
+        
+        playerBoards[p] = boardMarbles.map(m => {
+            const marble = new Marble(
+                m.id,
+                ARENA_X + m.nx * ARENA_RADIUS,
+                ARENA_Y + m.ny * ARENA_RADIUS,
+                m.color,
+                !!m.isCue
+            );
+            marble.active = m.active;
+            return marble;
+        });
+        playerCues[p] = playerBoards[p].find(m => m.isCue);
+    }
+
+
+    marbles = playerBoards[0];
+    cueMarble = playerCues[0];
+    currentPlayer = 1;
+    
+    const myIndex = data.players.findIndex(p => p.id === myPlayerId);
+    if (myIndex !== -1) window.mySlotIndex = myIndex;
+    
+    updateUI();
+    showTurnNotify(`BẮT ĐẦU: ${playerNames[0]}`);
+});
+
+socket.on('opponent-marbles-sync', (data) => {
+    if (isOnlineMode && (currentPlayer - 1) !== window.mySlotIndex) {
+        // Cập nhật điểm thời gian thực từ đối thủ
+        if (data.currentScore !== undefined) {
+            playerScores[currentPlayer - 1] = data.currentScore;
+            updateUI();
+        }
+
+        data.marbles.forEach(remoteM => {
+            const localM = marbles.find(m => m.id === remoteM.id);
+            if (localM) {
+                localM.pos.x = ARENA_X + remoteM.nx * ARENA_RADIUS;
+                localM.pos.y = ARENA_Y + remoteM.ny * ARENA_RADIUS;
+                localM.vel.x = remoteM.nvx * ARENA_RADIUS;
+                localM.vel.y = remoteM.nvy * ARENA_RADIUS;
+                localM.active = remoteM.active;
+            }
+        });
+        if (gameState !== 'MOVING') gameState = 'MOVING';
+    }
+});
+
+socket.on('opponent-shoot', (data) => {
+    if (gameState === 'IDLE' && cueMarble) {
+        remoteAimingData.active = false;
+        cueMarble.pos = new Vector(ARENA_X + data.startNX * ARENA_RADIUS, ARENA_Y + data.startNY * ARENA_RADIUS);
+        cueMarble.vel = new Vector(data.forceNX * ARENA_RADIUS, data.forceNY * ARENA_RADIUS);
+        gameState = 'MOVING';
+    }
+});
+
+socket.on('opponent-aim', (data) => {
+    remoteAimingData = data;
+});
+
+socket.on('sync-game-state', (data) => {
+    playerScores = data.scores;
+    playerTurns = data.turns;
+    const oldPlayer = currentPlayer;
+    currentPlayer = data.currentPlayer;
+    
+    if (data.marbles && isOnlineMode) {
+        data.marbles.forEach(remoteM => {
+            const localM = marbles.find(m => m.id === remoteM.id);
+            if (localM) {
+                localM.pos.x = ARENA_X + remoteM.nx * ARENA_RADIUS;
+                localM.pos.y = ARENA_Y + remoteM.ny * ARENA_RADIUS;
+                localM.active = remoteM.active;
+                localM.vel = new Vector(0,0);
+            }
+        });
+    }
+
+    if (data.gameState === 'GAMEOVER') {
+        endGame(true); // QUAN TRỌNG: skipBonus = true vì Master đã cộng rồi
+        return;
+    }
+
+    if (oldPlayer !== currentPlayer) {
+        switchPlayerBoard(currentPlayer);
+        showTurnNotify(`Lượt: ${playerNames[currentPlayer - 1]}`);
+    }
+    
+    gameState = 'IDLE';
+    updateUI();
+});
+
 
 function setupPlayerNames(count) {
     playerCountSetup.classList.add('hidden');
