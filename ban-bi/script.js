@@ -37,12 +37,21 @@ function calcDimensions() {
     canvas.width  = CANVAS_WIDTH;
     canvas.height = CANVAS_HEIGHT;
 
-    ARENA_X = CANVAS_WIDTH  / 2;
-    ARENA_Y = CANVAS_HEIGHT / 2;
+    const isLandscape = CANVAS_WIDTH > CANVAS_HEIGHT;
 
-    const maxByWidth  = CANVAS_WIDTH  * 0.42;
-    const maxByHeight = CANVAS_HEIGHT * 0.32;
+    // Chiều rộng đấu trường
+    const maxByWidth  = CANVAS_WIDTH  * (isLandscape ? 0.35 : 0.42);
+    const maxByHeight = CANVAS_HEIGHT * (isLandscape ? 0.28 : 0.32);
     ARENA_RADIUS = Math.round(Math.min(maxByWidth, maxByHeight, 280));
+
+    ARENA_X = CANVAS_WIDTH / 2;
+    
+    // Ở màn hình ngang, đẩy tâm Arena lên một chút để chừa chỗ kéo bi ở dưới
+    if (isLandscape) {
+        ARENA_Y = CANVAS_HEIGHT * 0.42; 
+    } else {
+        ARENA_Y = CANVAS_HEIGHT / 2;
+    }
 
     MARBLE_RADIUS = Math.max(8, Math.round(ARENA_RADIUS / 13));
     MAX_DRAG_DIST = ARENA_RADIUS * 0.85;
@@ -168,14 +177,18 @@ function initGame(players = 1) {
 }
 
 function resetCueMarble() {
-    // Đặt bi cái ở vị trí 80% từ tâm arena xuống theo chiều dọc trong vùng an toàn
-    const distance = ARENA_RADIUS + MARBLE_RADIUS * 5;
-    const cubeStartY = ARENA_Y + distance;
+    // Đặt bi cái cách tâm vòng tròn một khoảng tỉ lệ
+    const distance = ARENA_RADIUS + MARBLE_RADIUS * 4.5;
+    let cubeStartY = ARENA_Y + distance;
     
-    // Nếu vị trí này vượt quá màn hình, đẩy ngược lên
-    const safeY = Math.min(cubeStartY, CANVAS_HEIGHT - MARBLE_RADIUS * 3);
+    // Đảm bảo bi cái luôn nằm trên mép dưới ít nhất một khoảng MAX_DRAG_DIST 
+    // để người chơi có đủ room kéo lùi tăng lực bắn
+    const minBottomMargin = MAX_DRAG_DIST + MARBLE_RADIUS * 2;
+    if (cubeStartY > CANVAS_HEIGHT - minBottomMargin) {
+        cubeStartY = CANVAS_HEIGHT - minBottomMargin;
+    }
     
-    cueMarble = new Marble(ARENA_X, safeY, '#fff', true);
+    cueMarble = new Marble(ARENA_X, cubeStartY, '#fff', true);
     marbles.push(cueMarble);
 }
 
