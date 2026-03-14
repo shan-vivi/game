@@ -73,6 +73,7 @@ let turnsLeft = MAX_TURNS;
 let mouseX = 0;
 let mouseY = 0;
 let isDragging = false;
+let turnNotifyTimer = 0; // Timer for turn transition effect
 
 // Vector helper
 class Vector {
@@ -174,6 +175,8 @@ function initGame(players = 1) {
     updateUI();
     document.getElementById('mode-chooser').classList.add('hidden');
     gameOverModal.classList.add('hidden');
+    
+    if (numPlayers === 2) showTurnNotify(`Lượt: P${currentPlayer}`);
 }
 
 function resetCueMarble() {
@@ -469,16 +472,77 @@ function updateUI() {
     const pi = document.getElementById('player-indicator');
     const p2r = document.getElementById('score-p2-row');
     const p1r = document.querySelector('#score-board p:nth-of-type(2)');
+    
     if (numPlayers === 2) {
-        pi.classList.remove('hidden'); pi.textContent = `\u{1F3AE} P${currentPlayer}`;
-        p2r.classList.remove('hidden'); document.getElementById('score-p2').innerText = p2s;
-        if (p1r) p1r.childNodes[0].textContent = "P1: ";
+        pi.classList.remove('hidden'); 
+        pi.textContent = `🎮 Lượt P${currentPlayer}`;
+        pi.style.color = currentPlayer === 1 ? '#66ccff' : '#ff8844';
+        
+        p2r.classList.remove('hidden'); 
+        document.getElementById('score-p2').innerText = p2s;
+        
+        if (p1r) {
+            p1r.childNodes[0].textContent = "P1: ";
+            // Highlight current player row
+            p1r.style.background = currentPlayer === 1 ? 'rgba(102, 204, 255, 0.25)' : 'transparent';
+            p1r.style.borderLeft = currentPlayer === 1 ? '4px solid #66ccff' : 'none';
+            p1r.style.paddingLeft = currentPlayer === 1 ? '10px' : '0px';
+        }
+        
+        if (p2r) {
+            p2r.style.background = currentPlayer === 2 ? 'rgba(255, 136, 68, 0.25)' : 'transparent';
+            p2r.style.borderLeft = currentPlayer === 2 ? '4px solid #ff8844' : 'none';
+            p2r.style.paddingLeft = currentPlayer === 2 ? '10px' : '0px';
+        }
+        
         scoreEl.innerText = p1s;
     } else {
-        pi.classList.add('hidden'); p2r.classList.add('hidden');
-        if (p1r) p1r.childNodes[0].textContent = "\u0110i\u1EC3m: ";
+        pi.classList.add('hidden'); 
+        p2r.classList.add('hidden');
+        if (p1r) {
+            p1r.childNodes[0].textContent = "Điểm: ";
+            p1r.style.background = 'transparent';
+            p1r.style.borderLeft = 'none';
+            p1r.style.paddingLeft = '0';
+        }
         scoreEl.innerText = p1s;
     }
+}
+
+function showTurnNotify(text) {
+    let notify = document.getElementById('turn-notify');
+    if (!notify) {
+        notify = document.createElement('div');
+        notify.id = 'turn-notify';
+        notify.style.cssText = `
+            position: fixed; top: 30%; left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.85);
+            color: #ffcc00;
+            padding: 20px 40px;
+            border-radius: 60px;
+            font-family: 'VT323', monospace;
+            font-size: clamp(30px, 8vmin, 50px);
+            border: 4px solid #ffcc00;
+            z-index: 1000;
+            pointer-events: none;
+            text-shadow: 2px 2px 0 #000;
+            box-shadow: 0 0 30px rgba(0,0,0,0.6);
+            transition: opacity 0.4s, transform 0.4s;
+            opacity: 0;
+        `;
+        document.body.appendChild(notify);
+    }
+    
+    notify.textContent = text;
+    notify.style.opacity = '1';
+    notify.style.transform = 'translate(-50%, -50%) scale(1.1)';
+    
+    clearTimeout(turnNotifyTimer);
+    turnNotifyTimer = setTimeout(() => {
+        notify.style.opacity = '0';
+        notify.style.transform = 'translate(-50%, -50%) scale(0.9)';
+    }, 1500);
 }
 
 function gameLoop() {
@@ -531,7 +595,10 @@ function gameLoop() {
                 if (targetMarblesLeft === 0 || turnsLeft <= 0) {
                     endGame();
                 } else {
-                    if (numPlayers === 2) currentPlayer = (currentPlayer === 1) ? 2 : 1;
+                    if (numPlayers === 2) {
+                        currentPlayer = (currentPlayer === 1) ? 2 : 1;
+                        showTurnNotify(`Đến lượt: P${currentPlayer}`);
+                    }
                     gameState = 'IDLE';
                     // Tìm lại bi cái sau khi đã phạt (nếu có)
                     const stillActiveCue = marbles.find(m => m.isCue && m.active);
