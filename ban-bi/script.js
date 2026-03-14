@@ -614,101 +614,106 @@ function gameLoop() {
     requestAnimationFrame(gameLoop);
 }
 
-// Input Handling
-function getMousePos(evt) {
+// ============================================================
+// INPUT HANDLING - Unified Mouse + Touch (Native, no MouseEvent dispatch)
+// ============================================================
+
+function getClientPos(clientX, clientY) {
     const rect = canvas.getBoundingClientRect();
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
     return {
-        x: (evt.clientX - rect.left) * scaleX,
-        y: (evt.clientY - rect.top) * scaleY
+        x: (clientX - rect.left) * scaleX,
+        y: (clientY - rect.top) * scaleY
     };
 }
 
-canvas.addEventListener('mousedown', (e) => {
-    if (gameState !== 'IDLE' || !cueMarble) return;
+// Compatibility shim cho code cũ vẫn dùng getMousePos
+function getMousePos(evt) {
+    return getClientPos(evt.clientX, evt.clientY);
+}
 
-    const pos = getMousePos(e);
+// --- Shared core logic ---
+function handlePointerDown(clientX, clientY) {
+    if (gameState !== 'IDLE' || !cueMarble) return;
+    const pos = getClientPos(clientX, clientY);
     const mPos = new Vector(pos.x, pos.y);
-    
-    // Vùng chạm rộng hơn để dễ bấm trên mobile (3x bán kính)
-    const hitRadius = cueMarble.radius * 3.5;
+    // Vùng chạm lớn hơn để dùng ngón tay dễ hơn
+    const hitRadius = cueMarble.radius * 4;
     if (mPos.dist(cueMarble.pos) < hitRadius) {
         isDragging = true;
         gameState = 'AIMING';
         mouseX = pos.x;
         mouseY = pos.y;
     }
+}
+
+function handlePointerMove(clientX, clientY) {
+    const pos = getClientPos(clientX, clientY);
+    mouseX = pos.x;
+    mouseY = pos.y;
+}
+
+function handlePointerUp(clientX, clientY) {
+    if (!isDragging || gameState !== 'AIMING') return;
+    isDragging = false;
+
+    const pos = getClientPos(clientX, clientY);
+    let dragDiff = new Vector(pos.x - cueMarble.pos.x, pos.y - cueMarble.pos.y);
+
+    if (dragDiff.mag() > MAX_DRAG_DIST) {
+        dragDiff = dragDiff.normalize().mult(MAX_DRAG_DIST);
+    }
+
+    if (dragDiff.mag() > 5) {
+        cueMarble.vel = dragDiff.mult(-POWER_MULTIPLIER);
+        gameState = 'MOVING';
+    } else {
+        gameState = 'IDLE';
+    }
+}
+
+// --- Mouse Events ---
+canvas.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    handlePointerDown(e.clientX, e.clientY);
 });
 
 window.addEventListener('mousemove', (e) => {
-    const pos = getMousePos(e);
-    mouseX = pos.x;
-    mouseY = pos.y;
+    handlePointerMove(e.clientX, e.clientY);
 });
 
 window.addEventListener('mouseup', (e) => {
-    if (isDragging && gameState === 'AIMING') {
-        isDragging = false;
-        
-        const pos = getMousePos(e);
-        let dragDiff = new Vector(pos.x - cueMarble.pos.x, pos.y - cueMarble.pos.y);
-        
-        let dist = dragDiff.mag();
-        if (dist > MAX_DRAG_DIST) {
-            dragDiff = dragDiff.normalize().mult(MAX_DRAG_DIST);
-        }
-
-        // Apply velocity opposite to drag direction
-        // Ensure minimum force to actually shoot
-        if (dragDiff.mag() > 5) { 
-            cueMarble.vel = dragDiff.mult(-POWER_MULTIPLIER);
-            gameState = 'MOVING';
-        } else {
-            gameState = 'IDLE'; // Cancel shot if pulled too little
-        }
-    }
+    handlePointerUp(e.clientX, e.clientY);
 });
 
-// Touch support
+// --- Touch Events (native, không dùng MouseEvent dispatch) ---
 canvas.addEventListener('touchstart', (e) => {
-    e.preventDefault();
-    const touch = e.touches[0];
-    if (touch) {
-        const mouseEvent = new MouseEvent('mousedown', {
-            clientX: touch.clientX,
-            clientY: touch.clientY
-        });
-        canvas.dispatchEvent(mouseEvent);
-    }
+    e.preventDefault(); // Tắt scroll/zoom khi chơi
+    const t = e.changedTouches[0];
+    if (t) handlePointerDown(t.clientX, t.clientY);
 }, { passive: false });
 
-window.addEventListener('touchmove', (e) => {
-    e.preventDefault();
-    const touch = e.touches[0];
-    if (touch) {
-        const mouseEvent = new MouseEvent('mousemove', {
-            clientX: touch.clientX,
-            clientY: touch.clientY
-        });
-        window.dispatchEvent(mouseEvent);
-    }
+canvas.addEventListener('touchmove', (e) => {
+    e.preventDefault(); // Tắt scroll trang khi kéo
+    const t = e.changedTouches[0];
+    if (t) handlePointerMove(t.clientX, t.clientY);
 }, { passive: false });
 
-window.addEventListener('touchend', (e) => {
-    if (isDragging) {
-        e.preventDefault();
-        // For touchend, changedTouches is where we get the last coordinate
-        const touch = e.changedTouches[0];
-        if (touch) {
-            const mouseEvent = new MouseEvent('mouseup', {
-                clientX: touch.clientX,
-                clientY: touch.clientY
-            });
-            window.dispatchEvent(mouseEvent);
-        }
-    }
+canvas.addEventListener('touchend', (e) => {
+    e.preventDefault();
+    const t = e.changedTouches[0];
+    if (t) handlePointerUp(t.clientX, t.clientY);
 }, { passive: false });
+
+canvas.addEventListener('touchcancel', (e) => {
+    // Bị gián đoạn (vd: cuộc gọi đến) → huỷ lượt
+    isDragging = false;
+    if (gameState === 'AIMING') gameState = 'IDLE';
+});
+
+
+
 
 // Leaderboard Logic
 const LEADERBOARD_KEY = 'banBiLeaderboard';
